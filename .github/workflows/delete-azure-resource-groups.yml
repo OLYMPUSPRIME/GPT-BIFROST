@@ -5,7 +5,7 @@ on:
     inputs:
       dry_run:
         description: "List resource groups only (recommended for first run)"
-        required: true
+        required: false
         type: boolean
         default: true
       confirmation:
