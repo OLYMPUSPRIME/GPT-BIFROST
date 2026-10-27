@@ -6,12 +6,6 @@
 
 🚀 A repeatable Azure lab to deploy **one Windows VM and one Linux VM** using **Bicep + GitHub Actions**. This is a demo/testing workload, not a production landing zone.
 
-## 🖼️ Architecture at a glance
-
-![BIFROST Azure VM demo architecture](docs/images/bifrost-vm-demo-architecture.svg)
-
-> 🧭 The architecture above is an actual SVG image stored in the repository. Workflow and process diagrams below use Mermaid so they remain editable in Markdown.
-
 ## 🎯 Demo goals
 
 - 🪟 Deploy a Windows test virtual machine.
