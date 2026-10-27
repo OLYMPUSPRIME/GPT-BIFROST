@@ -19,7 +19,7 @@ az account show --query "{name:name,id:id,tenantId:tenantId}" -o table
 GROUPS_JSON="$(az group list --query '[].{name:name,location:location,id:id}' -o json)"
 GROUP_COUNT="$(jq 'length' <<< "$GROUPS_JSON")"
 echo "Resource groups discovered: $GROUP_COUNT"
-jq -r '.[] | " - (.name) | (.location) | (.id)"' <<< "$GROUPS_JSON"
+jq -r '.[] | " - \\(.name) | \\(.location) | \\(.id)"' <<< "$GROUPS_JSON"
 if [[ "$GROUP_COUNT" -eq 0 ]]; then echo "No resource groups found."; exit 0; fi
 if [[ "$DRY_RUN" == "true" ]]; then echo "DRY RUN: nothing deleted."; exit 0; fi
 [[ "$DRY_RUN" == "false" ]] || { echo "ERROR: DRY_RUN must be true or false." >&2; exit 1; }
