@@ -1,0 +1,82 @@
+name: Delete Azure Resource Groups
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "List resource groups only (recommended for first run)"
+        required: true
+        type: boolean
+        default: true
+      confirmation:
+        description: "For deletion, enter DELETE-ALL-RESOURCE-GROUPS"
+        required: false
+        type: string
+        default: ""
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: azure-resource-group-cleanup
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    name: Inventory / Delete Resource Groups
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    environment: azure-rg-cleanup
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Validate branch and confirmation
+        shell: bash
+        env:
+          DRY_RUN: ${{ inputs.dry_run }}
+          CONFIRMATION: ${{ inputs.confirmation }}
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" != "refs/heads/Delete/Azure/RG" ]]; then
+            echo "::error::Run only from Delete/Azure/RG."
+            exit 1
+          fi
+          if [[ "$DRY_RUN" != "true" && "$CONFIRMATION" != "DELETE-ALL-RESOURCE-GROUPS" ]]; then
+            echo "::error::Destructive mode requires the exact confirmation phrase."
+            exit 1
+          fi
+      - name: Azure login with OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Verify subscription
+        shell: bash
+        env:
+          EXPECTED_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$EXPECTED_SUBSCRIPTION_ID" ]]; then
+            echo "::error::Missing repository variable AZURE_SUBSCRIPTION_ID."
+            exit 1
+          fi
+          ACTUAL_SUBSCRIPTION_ID="$(az account show --query id -o tsv)"
+          echo "Configured subscription: $EXPECTED_SUBSCRIPTION_ID"
+          echo "Authenticated subscription: $ACTUAL_SUBSCRIPTION_ID"
+          if [[ "${ACTUAL_SUBSCRIPTION_ID,,}" != "${EXPECTED_SUBSCRIPTION_ID,,}" ]]; then
+            echo "::error::Authenticated subscription mismatch."
+            exit 1
+          fi
+          az account show --query "{name:name,id:id,tenantId:tenantId,state:state}" -o table
+      - name: Inventory and optionally delete
+        shell: bash
+        env:
+          DRY_RUN: ${{ inputs.dry_run }}
+          CONFIRM_DELETE: ${{ inputs.confirmation }}
+          EXPECTED_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+        run: |
+          set -euo pipefail
+          chmod +x scripts/delete-resource-groups.sh
+          ./scripts/delete-resource-groups.sh
