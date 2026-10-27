@@ -7,7 +7,7 @@ on:
         description: "List resource groups only (recommended for first run)"
         required: false
         type: boolean
-        default: true
+        default: false
       confirmation:
         description: "For deletion, enter DELETE-ALL-RESOURCE-GROUPS"
         required: false
