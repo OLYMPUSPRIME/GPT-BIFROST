@@ -56,6 +56,39 @@ The current workflow is `.github/workflows/deploy.yml`. It triggers on pushes to
 
 > **Current behavior to be aware of:** the workflow generates the VM administrator password independently in the what-if step and the deployment step. The preview and actual deployment therefore do not use the same generated value. Also, the current workflow proceeds from what-if to deployment without a separate human approval gate. Treat this as a test workflow until approval, secret handling, and deployment controls are reviewed.
 
+## Jira ticket parameters and subscription validation
+
+In the target PIKE workflow, the Jira ticket is the source for the request-specific deployment parameters. GitHub Actions must validate the payload and check the requested subscription against the approved subscription configuration before starting a deployment. The subscription ID is passed to Azure CLI as the deployment target; it is not implicitly selected from an environment `.bicepparam` file.
+
+The exact fields should be defined in the Jira request contract. Typical request fields include:
+
+- **Targeting:** Subscription ID, environment, Azure region/deployment location, resource group (if applicable).
+- **Resource selection:** Resource type/module, OS and version, approved SKU/size, image, network/subnet selections, and required dependencies.
+- **Project and governance:** Project/application ID, business unit/cost centre, financial ID, owner, business criticality, resource type, and required tags.
+- **Request context:** Jira ticket/request ID, requester, business justification, uptime/downtime requirements, additional requirements, and approval/Ready for Deployment status.
+- **Access requests (PIM/RBAC, when applicable):** Principal Object ID and type, role definition ID, requested access duration, justification, and any required approval evidence.
+
+Only collect fields relevant to the selected module. For example, PIM requires the target subscription, principal identity, role definition, justification, and access schedule settings; it does not need VM-only inputs such as OS image or VM size. Secrets and credentials must not be sent as ordinary ticket fields.
+
+```mermaid
+flowchart TD
+    A[Jira Ticket] --> B[Read Subscription ID and other request parameters]
+    B --> C[GitHub Actions receives request payload]
+    C --> D[Validate required fields and allowed values]
+    D --> E{Is subscription approved?}
+    E -->|No| F[Stop deployment and report validation failure]
+    E -->|Yes| G[Resolve selected module and deployment parameters]
+    G --> H[Run Bicep validation and what-if]
+    H --> I{Deployment approved and preview accepted?}
+    I -->|No| J[Stop deployment and update request status]
+    I -->|Yes| K[Pass Subscription ID and location to Azure CLI]
+    K --> L[Deploy selected Bicep module]
+    L --> M[Verify result and resource details]
+    M --> N[Update Jira ticket and notify requester]
+```
+
+The diagram above describes the **intended target flow**. Jira payload intake, request-schema validation, approved-subscription checking, approval gates, and Jira result updates must be implemented in the workflow before the process is fully automated. The existing deployment workflow remains configuration-driven until those integrations are added.
+
 ## End-to-end PIKE workflow
 
 This is the intended business and technical process represented by the shared “Azure Environment Provisioning — End to End Flow (Updated)” diagram.
