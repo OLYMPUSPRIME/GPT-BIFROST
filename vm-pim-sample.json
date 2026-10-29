@@ -1,0 +1,7 @@
+{
+  "request": { "ticketId": "PIKE-12345", "approvalStatus": "Approved" },
+  "target": { "subscriptionId": "<subscription-id>", "environment": "dev", "deploymentLocation": "eastus", "resourceGroupName": "rg-pike-vm-demo" },
+  "modules": ["compute-vm", "pim"],
+  "vm": { "vmName": "vm-pike-demo-01", "location": "eastus", "resourceGroupName": "rg-pike-vm-demo", "imageSku": "2019-Datacenter", "vmSize": "Standard_D2s_v3", "adminUsername": "azureuser", "adminPasswordSource": "generated-at-runtime", "vnetName": "vnet-pike-demo", "subnetName": "snet-pike-app", "keyVaultName": "kv-pike-demo", "privateIPAllocationMethod": "Dynamic", "tags": { "Environment": "dev", "Application": "PikeDemo", "RequestId": "PIKE-12345" } },
+  "pim": { "enabled": true, "principalId": "<entra-object-id>", "principalType": "User", "roleDefinitionId": "/subscriptions/<subscription-id>/providers/Microsoft.Authorization/roleDefinitions/<role-guid>", "roleName": "Reader", "justification": "Time-bound eligible access for PIKE-12345", "duration": "P30D", "startDateTime": null }
+}
