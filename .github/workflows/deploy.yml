@@ -1,0 +1,86 @@
+name: Deploy Azure Resources
+
+on:
+    push:
+        branches:
+          -   Dev
+       
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  generate-matrix:
+    runs-on: ubuntu-latest
+
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Generate Matrix
+        id: set-matrix
+        shell: bash
+        run: |
+          jq empty config/subscriptions.json
+
+          JSON_CONTENT=$(jq -c \
+            '[ .[] | select(.environment == "dev") ]' \
+            config/subscriptions.json)
+
+          echo "Selected deployment:"
+          echo "$JSON_CONTENT"
+
+          echo "matrix=$JSON_CONTENT" >> $GITHUB_OUTPUT
+
+  deploy:
+    needs: generate-matrix
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include: ${{ fromJson(needs.generate-matrix.outputs.matrix) }}
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ matrix.sub_id }}
+
+      - name: Show Deployment Information
+        run: |
+          echo "Application : ${{ matrix.app_name }}"
+          echo "Environment : ${{ matrix.environment }}"
+          echo "Subscription : ${{ matrix.sub_id }}"
+          echo "Parameter File : ${{ matrix.param_file }}"
+
+      - name: What-If Deployment
+        shell: bash
+        run: |
+          ADMIN_PASSWORD="Aa1!$(openssl rand -base64 32 | tr -d '\n' | tr '/+' 'XY' | cut -c1-24)"
+
+          az deployment sub what-if \
+            --location eastus \
+            --template-file modules/main.bicep \
+            --parameters "${{ matrix.param_file }}" \
+            --parameters vmAdminPassword="$ADMIN_PASSWORD"
+
+      - name: Deploy Bicep
+        shell: bash
+        run: |
+          ADMIN_PASSWORD="Aa1!$(openssl rand -base64 32 | tr -d '\n' | tr '/+' 'XY' | cut -c1-24)"
+
+          az deployment sub create \
+            --location eastus \
+            --template-file modules/main.bicep \
+            --parameters "${{ matrix.param_file }}" \
+            --parameters vmAdminPassword="$ADMIN_PASSWORD"
