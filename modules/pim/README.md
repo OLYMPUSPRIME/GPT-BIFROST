@@ -11,7 +11,7 @@ Reusable Bicep module for requesting **eligible Azure RBAC access** at subscript
 
 ## Dependencies and prerequisites
 
-1. **Target subscription** — the subscription where eligible access is required. The deployment command selects it with a subscription ID or name.
+1. **Target subscription ID (required)** — the Azure subscription where the eligible role assignment will be created. It is not a parameter declared in `pim.bicep` because this template uses `targetScope = 'subscription'`; the target is selected by the deployment command (`--subscription`) or by the parent deployment/workflow. The subscription ID must still be supplied to the deployment process.
 2. **Deployment location** — an Azure region such as `eastus` for the subscription-level deployment record. This is not the region where PIM access is activated.
 3. **Principal object ID** — the Microsoft Entra object ID of the target user, group, or service principal.
 4. **Role definition ID** — the full Azure role definition resource ID for the requested built-in or custom role.
@@ -21,10 +21,11 @@ Reusable Bicep module for requesting **eligible Azure RBAC access** at subscript
 
 ## Parameters and where to get the values
 
-The workflow passes parameters to Bicep through an **Azure deployment parameters JSON file** or explicit command-line parameters. The JSON file is an input to the deployment; it does not need to be stored inside this module directory.
+The workflow passes parameters to Bicep through an **Azure deployment parameters JSON file** or explicit command-line parameters. The JSON file is an input to the deployment; it does not need to be stored inside this module directory. The **subscription ID is supplied separately** to Azure CLI using `--subscription`, or is selected by the parent workflow.
 
 | Parameter | Required | Input source / how to obtain it | Default |
 |---|---:|---|---|
+| `subscriptionId` (deployment target) | Yes | Select the target subscription in Azure CLI/GitHub Actions. Find it in Azure portal > **Subscriptions** > select the subscription > **Subscription ID**, or run `az account list --query "[].{Name:name,SubscriptionId:id,IsDefault:isDefault}" -o table`. It is a deployment setting, not a parameter inside `pim.bicep`. | — |
 | `principalId` | Yes | Microsoft Entra admin center: select the target user/group and copy **Object ID**. For a service principal, use its service-principal object ID, not the application/client ID. | — |
 | `roleDefinitionId` | Yes | Azure portal: target subscription > **Access control (IAM) > Roles**; obtain the full role definition resource ID. Azure CLI can query role definitions. | — |
 | `justification` | Yes | Approved PIKE access request, service ticket, or change record. | — |
@@ -79,12 +80,13 @@ flowchart TD
 
 1. **Request intake:** The PIKE request/ticket provides the requester, target identity, requested role, target subscription, business justification, and requested duration.
 2. **Resolve IDs:** Find the target identity's **Object ID** in Microsoft Entra ID. Find the full **role definition resource ID** in Azure RBAC. Do not use an application/client ID in place of a service-principal object ID.
-3. **Build JSON input:** Put the required values and any approved optional overrides into a deployment parameters JSON file. Keep secrets out of the JSON file; use the organization's approved secret/configuration handling for authentication.
-4. **Authenticate:** The operator or pipeline authenticates to Azure using an approved deployment identity. For GitHub Actions, workload identity federation is generally preferable to storing a long-lived client secret.
-5. **Preview and deploy:** Run Bicep validation/what-if, review the target subscription and role, then submit the subscription deployment.
-6. **Create eligibility:** Azure processes the `Microsoft.Authorization/roleEligibilityScheduleRequests` resource. The Bicep outputs return the eligibility request resource ID and name if deployment succeeds.
-7. **Activate separately:** Eligibility alone does **not** make the role active. The user activates through PIM, or a separately designed supported API workflow handles activation while honoring MFA, approval, justification, and other configured requirements.
-8. **Expire:** PIM applies the configured eligibility/activation schedule. Active permissions are available only after successful activation and end according to the applicable schedule/policy.
+3. **Select the target subscription:** Obtain the subscription ID from Azure portal > Subscriptions, or use Azure CLI after signing in. Confirm the selected subscription is the approved target; do not assume the default subscription is correct.
+4. **Build JSON input:** Put the required values and any approved optional overrides into a deployment parameters JSON file. Keep secrets out of the JSON file; use the organization's approved secret/configuration handling for authentication.
+5. **Authenticate:** The operator or pipeline authenticates to Azure using an approved deployment identity. For GitHub Actions, workload identity federation is generally preferable to storing a long-lived client secret.
+6. **Preview and deploy:** Run Bicep validation/what-if, review the target subscription and role, then submit the subscription deployment.
+7. **Create eligibility:** Azure processes the `Microsoft.Authorization/roleEligibilityScheduleRequests` resource. The Bicep outputs return the eligibility request resource ID and name if deployment succeeds.
+8. **Activate separately:** Eligibility alone does **not** make the role active. The user activates through PIM, or a separately designed supported API workflow handles activation while honoring MFA, approval, justification, and other configured requirements.
+9. **Expire:** PIM applies the configured eligibility/activation schedule. Active permissions are available only after successful activation and end according to the applicable schedule/policy.
 
 ## Example JSON deployment parameters
 
@@ -116,7 +118,7 @@ The following is an example of the **Azure deployment parameters file format**. 
 
 ## Example deployment
 
-Run from the repository root. Replace the subscription, location, and parameters-file path with your actual values.
+Run from the repository root. Replace the subscription, location, and parameters-file path with your actual values. The subscription ID comes from Azure portal > **Subscriptions** > **Subscription ID**, or from `az account list` after Azure CLI login. Confirm it is the intended subscription before running either command.
 
 Preview the deployment first:
 
