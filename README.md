@@ -25,6 +25,8 @@ BIFROST separates Azure resource definitions into reusable Bicep templates, uses
 
 The intended operating model is:
 
+**Source-of-truth rule:** request-specific values such as the target subscription ID should come from the approved Jira request payload. GitHub Actions validates those values against approved configuration and passes them to the deployment. Environment `.bicepparam` files provide template parameters for the selected environment; they should not silently override a ticket's target subscription. For subscription-scope templates such as PIM, the subscription is selected with the deployment command's `--subscription` argument.
+
 1. A requester raises an approved request in Jira or the agreed intake system.
 2. Request details are assessed and mapped to an approved environment standard.
 3. The deployment payload selects the environment, subscription, resource group, region, and required resource modules.
@@ -175,7 +177,7 @@ PIM and direct RBAC are documented as separate modules. They are not currently o
 
 ### 1. Environment configuration
 
-The GitHub Actions workflow reads `config/subscriptions.json` and selects entries for `dev`. Each selected entry is expected to provide the subscription ID, environment/application metadata, and a parameter-file path used by the workflow.
+The current GitHub Actions workflow reads `config/subscriptions.json` and selects entries for `dev`; that is the current configuration-driven behavior. In the target PIKE flow, request-specific target details (including Subscription ID) should come from the approved Jira ticket payload, then be validated against `config/subscriptions.json` or an explicit approved-subscription allowlist. The validated request should determine the deployment target. Environment `.bicepparam` files supply Bicep template parameters; they are not automatically the source of the ticket's subscription ID.
 
 The workflow currently logs in using these GitHub repository/environment variables:
 
@@ -249,7 +251,7 @@ Do not copy a production deployment command blindly: check Azure CLI authenticat
 |---|---|---|
 | 1. Requester | Process / external | Not represented in code. |
 | 2. Jira request entry | Not implemented in current workflow | No Jira intake integration is present in `.github/workflows/deploy.yml`. |
-| 3. Request parameters | Partially implemented | Environment parameter files and `landingZones` carry infrastructure inputs; no Jira payload validation/normalization pipeline is shown. |
+| 3. Request parameters | Partially implemented | Current deployments use environment parameter files and `landingZones`; the target flow should read request-specific values (including Subscription ID) from Jira and validate/normalize them before deployment. |
 | 4. Project assessment | Not implemented as automation | No automated new-vs-existing project decision or foundation branch is present. |
 | 5. Environment standard / landing zone | Partially implemented | Resource templates and environment files exist; a centralized enforcement/approval layer is not demonstrated. |
 | 6. Cost analysis | Not implemented | No cost estimation or budget approval gate is present. |
