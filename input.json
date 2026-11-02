@@ -106,5 +106,17 @@
       "ticketSystem": "Jira",
       "ticketNumber": "PIKE-12345"
     }
+  },
+  "deploymentPlan": {
+    "resourceGroup": "create",
+    "networking": {
+      "nsg": "create",
+      "vnet": "create",
+      "subnet": "create",
+      "publicIp": "create",
+      "nic": "create"
+    },
+    "virtualMachine": "create",
+    "pim": "notRequested"
   }
 }
