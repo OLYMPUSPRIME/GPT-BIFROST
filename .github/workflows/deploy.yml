@@ -81,10 +81,10 @@ jobs:
           ip=ipaddress.ip_network(c['virtualMachine']['network']['sshAllowedSourceAddressPrefix'],strict=False)
           check(ip.prefixlen==ip.max_prefixlen,'SSH source must be a single host CIDR')
           with open(os.environ['GITHUB_OUTPUT'],'a') as f:
-            f.write(f"subscription_id={os.environ['AZURE_SUBSCRIPTION_ID']}\\n")
-            f.write(f"tenant_id={os.environ['AZURE_TENANT_ID']}\\n")
-            f.write(f"location={c['deployment']['location']}\\n")
-            f.write(f"rg_name={c['resourceGroup']['name']}\\n")
+            f.write(f"subscription_id={os.environ['AZURE_SUBSCRIPTION_ID']}\n")
+            f.write(f"tenant_id={os.environ['AZURE_TENANT_ID']}\n")
+            f.write(f"location={c['deployment']['location']}\n")
+            f.write(f"rg_name={c['resourceGroup']['name']}\n")
           PY
 
   prepare:
@@ -121,7 +121,7 @@ jobs:
           subscription-id: ${{ needs.validate.outputs.subscription_id }}
       - name: Generate RG module parameters
         run: |
-          jq '{\$schema:"https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",contentVersion:"1.0.0.0",parameters:{name:{value:.resourceGroup.name},location:{value:.resourceGroup.location},tags:{value:.resourceGroup.tags}}}' input.resolved.json > rg.parameters.json
+          jq '{"$schema":"https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",contentVersion:"1.0.0.0",parameters:{name:{value:.resourceGroup.name},location:{value:.resourceGroup.location},tags:{value:.resourceGroup.tags}}}' input.resolved.json > rg.parameters.json
       - name: Resource Group What-If
         run: az deployment sub what-if --name "BIFROST-RG-WhatIf-${{ github.run_number }}" --location "${{ needs.validate.outputs.location }}" --template-file modules/resource-group/resource-group.bicep --parameters @rg.parameters.json
 
@@ -143,7 +143,7 @@ jobs:
           subscription-id: ${{ needs.validate.outputs.subscription_id }}
       - name: Resource Group module deployment
         run: |
-          jq '{\$schema:"https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",contentVersion:"1.0.0.0",parameters:{name:{value:.resourceGroup.name},location:{value:.resourceGroup.location},tags:{value:.resourceGroup.tags}}}' input.resolved.json > params.json
+          jq '{"$schema":"https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",contentVersion:"1.0.0.0",parameters:{name:{value:.resourceGroup.name},location:{value:.resourceGroup.location},tags:{value:.resourceGroup.tags}}}' input.resolved.json > params.json
           az deployment sub create --name "BIFROST-RG-${{ github.run_number }}" --location "${{ needs.validate.outputs.location }}" --template-file modules/resource-group/resource-group.bicep --parameters @params.json --output table
 
   nsg:
@@ -164,7 +164,7 @@ jobs:
           subscription-id: ${{ needs.validate.outputs.subscription_id }}
       - name: Deploy NSG Bicep module
         run: |
-          jq '{\$schema:"https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",contentVersion:"1.0.0.0",parameters:{location:{value:.deployment.location},nsgName:{value:.virtualMachine.network.networkSecurityGroupName},securityRules:{value:.virtualMachine.network.securityRules},tags:{value:(.resourceGroup.tags + .virtualMachine.tags)}}}' input.resolved.json > params.json
+          jq '{"$schema":"https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",contentVersion:"1.0.0.0",parameters:{location:{value:.deployment.location},nsgName:{value:.virtualMachine.network.networkSecurityGroupName},securityRules:{value:.virtualMachine.network.securityRules},tags:{value:(.resourceGroup.tags + .virtualMachine.tags)}}}' input.resolved.json > params.json
           az deployment group create --name "BIFROST-NSG-${{ github.run_number }}" --resource-group "${{ needs.validate.outputs.rg_name }}" --template-file modules/networking/nsg.bicep --parameters @params.json --output table
 
   vnet:
@@ -185,7 +185,7 @@ jobs:
           subscription-id: ${{ needs.validate.outputs.subscription_id }}
       - name: Deploy VNet Bicep module
         run: |
-          jq '{\$schema:"https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",contentVersion:"1.0.0.0",parameters:{location:{value:.deployment.location},vnetName:{value:.virtualMachine.network.virtualNetworkName},addressPrefixes:{value:[.virtualMachine.network.addressPrefix]},subnets:{value:[{name:.virtualMachine.network.subnetName,addressPrefix:.virtualMachine.network.subnetPrefix,nsgName:.virtualMachine.network.networkSecurityGroupName}]},tags:{value:(.resourceGroup.tags + .virtualMachine.tags)}}}' input.resolved.json > params.json
+          jq '{"$schema":"https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",contentVersion:"1.0.0.0",parameters:{location:{value:.deployment.location},vnetName:{value:.virtualMachine.network.virtualNetworkName},addressPrefixes:{value:[.virtualMachine.network.addressPrefix]},subnets:{value:[{name:.virtualMachine.network.subnetName,addressPrefix:.virtualMachine.network.subnetPrefix,nsgName:.virtualMachine.network.networkSecurityGroupName}]},tags:{value:(.resourceGroup.tags + .virtualMachine.tags)}}}' input.resolved.json > params.json
           az deployment group create --name "BIFROST-VNET-${{ github.run_number }}" --resource-group "${{ needs.validate.outputs.rg_name }}" --template-file modules/networking/vnet.bicep --parameters @params.json --output table
 
   public-ip:
@@ -206,7 +206,7 @@ jobs:
           subscription-id: ${{ needs.validate.outputs.subscription_id }}
       - name: Deploy Public IP module
         run: |
-          jq '{\$schema:"https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",contentVersion:"1.0.0.0",parameters:{location:{value:.virtualMachine.location},publicIpName:{value:.virtualMachine.network.publicIp.name},allocationMethod:{value:.virtualMachine.network.publicIp.allocationMethod},sku:{value:.virtualMachine.network.publicIp.sku},tags:{value:(.resourceGroup.tags + .virtualMachine.tags)}}}' input.resolved.json > params.json
+          jq '{"$schema":"https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",contentVersion:"1.0.0.0",parameters:{location:{value:.virtualMachine.location},publicIpName:{value:.virtualMachine.network.publicIp.name},allocationMethod:{value:.virtualMachine.network.publicIp.allocationMethod},sku:{value:.virtualMachine.network.publicIp.sku},tags:{value:(.resourceGroup.tags + .virtualMachine.tags)}}}' input.resolved.json > params.json
           az deployment group create --name "BIFROST-PIP-${{ github.run_number }}" --resource-group "${{ needs.validate.outputs.rg_name }}" --template-file modules/networking/public-ip.bicep --parameters @params.json --output table
 
   nic:
@@ -227,7 +227,7 @@ jobs:
           subscription-id: ${{ needs.validate.outputs.subscription_id }}
       - name: Deploy NIC module and attach subnet/Public IP
         run: |
-          jq '{\$schema:"https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",contentVersion:"1.0.0.0",parameters:{location:{value:.virtualMachine.location},nicName:{value:.virtualMachine.network.networkInterfaceName},vnetName:{value:.virtualMachine.network.virtualNetworkName},subnetName:{value:.virtualMachine.network.subnetName},publicIpName:{value:.virtualMachine.network.publicIp.name},attachPublicIp:{value:.virtualMachine.network.publicIp.create},tags:{value:(.resourceGroup.tags + .virtualMachine.tags)}}}' input.resolved.json > params.json
+          jq '{"$schema":"https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",contentVersion:"1.0.0.0",parameters:{location:{value:.virtualMachine.location},nicName:{value:.virtualMachine.network.networkInterfaceName},vnetName:{value:.virtualMachine.network.virtualNetworkName},subnetName:{value:.virtualMachine.network.subnetName},publicIpName:{value:.virtualMachine.network.publicIp.name},attachPublicIp:{value:.virtualMachine.network.publicIp.create},tags:{value:(.resourceGroup.tags + .virtualMachine.tags)}}}' input.resolved.json > params.json
           az deployment group create --name "BIFROST-NIC-${{ github.run_number }}" --resource-group "${{ needs.validate.outputs.rg_name }}" --template-file modules/networking/nic.bicep --parameters @params.json --output table
 
   vm:
@@ -248,7 +248,7 @@ jobs:
           subscription-id: ${{ needs.validate.outputs.subscription_id }}
       - name: Deploy Linux VM module
         run: |
-          jq '{\$schema:"https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",contentVersion:"1.0.0.0",parameters:{location:{value:.virtualMachine.location},vmName:{value:.virtualMachine.name},adminUsername:{value:.virtualMachine.adminUsername},vmSize:{value:.virtualMachine.vmSize},sshPublicKey:{value:.virtualMachine.sshPublicKey},image:{value:.virtualMachine.image},osDisk:{value:.virtualMachine.osDisk},networkInterfaceName:{value:.virtualMachine.network.networkInterfaceName},tags:{value:(.resourceGroup.tags + .virtualMachine.tags)}}}' input.resolved.json > params.json
+          jq '{"$schema":"https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",contentVersion:"1.0.0.0",parameters:{location:{value:.virtualMachine.location},vmName:{value:.virtualMachine.name},adminUsername:{value:.virtualMachine.adminUsername},vmSize:{value:.virtualMachine.vmSize},sshPublicKey:{value:.virtualMachine.sshPublicKey},image:{value:.virtualMachine.image},osDisk:{value:.virtualMachine.osDisk},networkInterfaceName:{value:.virtualMachine.network.networkInterfaceName},tags:{value:(.resourceGroup.tags + .virtualMachine.tags)}}}' input.resolved.json > params.json
           az deployment group create --name "BIFROST-VM-${{ github.run_number }}" --resource-group "${{ needs.validate.outputs.rg_name }}" --template-file modules/compute/vm-linux.bicep --parameters @params.json --output table
 
   pim:
