@@ -99,6 +99,7 @@ resource vm 'Microsoft.Compute/virtualMachines@2024-03-01' = {
         name: osDisk.name
         createOption: 'FromImage'
         diskSizeGB: osDisk.diskSizeGB
+        caching: osDisk.caching
         managedDisk: {
           storageAccountType: osDisk.storageAccountType
         }
