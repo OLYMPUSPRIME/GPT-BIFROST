@@ -34,7 +34,7 @@
     "osType": "Linux",
     "adminUsername": "azureuser",
     "authenticationType": "SSH",
-    "sshPublicKey": "<SSH-PUBLIC-KEY>",
+    "sshPublicKey": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPsqFnE9WlJXA5HWa/TnLJNpGgHMN4D3pzO2HKGvis/R bifrost-azure-test",
     "image": {
       "publisher": "Canonical",
       "offer": "ubuntu-24_04-lts",
