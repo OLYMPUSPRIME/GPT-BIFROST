@@ -93,6 +93,7 @@ jobs:
         shell: bash
         env:
           AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
         run: |
           set -euo pipefail
           python - <<'PY'
@@ -103,7 +104,9 @@ jobs:
           need(c["request"]["approved"] is True,"request.approved must be true")
           need(c["request"]["environment"]=="dev","Only dev environment is supported")
           need(c["subscription"]["name"]=="BIFROST-SC","Only BIFROST-SC is permitted")
-          need(c["subscription"]["subscriptionId"]=="efa057fe-e3b8-462a-98ba-08e0024d2442","Subscription ID does not match BIFROST-SC allowlist")
+          subscription_id=os.environ.get("AZURE_SUBSCRIPTION_ID","").strip()
+          need(bool(subscription_id),"GitHub Actions variable AZURE_SUBSCRIPTION_ID is missing or empty")
+          need(c["subscription"]["subscriptionId"]=="${AZURE_SUBSCRIPTION_ID}","input.json subscriptionId must use the AZURE_SUBSCRIPTION_ID placeholder")
           tenant_id=os.environ.get("AZURE_TENANT_ID","").strip()
           need(bool(tenant_id),"GitHub Actions variable AZURE_TENANT_ID is missing or empty")
           rg=c["resourceGroup"]["name"]; vm=c["virtualMachine"]; net=vm["network"]; pim=c["pim"]
@@ -113,7 +116,7 @@ jobs:
           ip=ipaddress.ip_network(net["sshAllowedSourceAddressPrefix"],strict=False)
           need(ip.prefixlen==ip.max_prefixlen,"SSH CIDR must be one host (/32 or /128)")
           values={
-          "subscription_id":c["subscription"]["subscriptionId"],"tenant_id":tenant_id,
+          "subscription_id":subscription_id,"tenant_id":tenant_id,
           "location":c["deployment"]["location"],"rg_name":rg,"vm_name":vm["name"],
           "vnet_name":net["virtualNetworkName"],"subnet_name":net["subnetName"],"nsg_name":net["networkSecurityGroupName"],
           "nic_name":net["networkInterfaceName"],"pip_name":net["publicIp"]["name"],"ssh_source":net["sshAllowedSourceAddressPrefix"],
@@ -151,7 +154,7 @@ jobs:
       - name: Generate temporary .bicepparam from input.json
         run: |
           printf "using './modules/main.bicep'\nparam config = " > deployment.generated.bicepparam
-          jq -c . input.json >> deployment.generated.bicepparam
+          jq -c --arg subscriptionId "${{ needs.validate.outputs.subscription_id }}" '.subscription.subscriptionId = $subscriptionId' input.json >> deployment.generated.bicepparam
           printf "\nparam deployPim = %s\n" "${{ inputs.deploy_pim }}" >> deployment.generated.bicepparam
           chmod 600 deployment.generated.bicepparam
       - name: Run What-If
