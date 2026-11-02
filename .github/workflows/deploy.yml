@@ -53,6 +53,7 @@ jobs:
     name: 02 - Validate configuration
     needs: lint
     runs-on: ubuntu-latest
+    environment: bifrost-dev
     outputs:
       subscription_id: ${{ steps.config.outputs.subscription_id }}
       tenant_id: ${{ steps.config.outputs.tenant_id }}
