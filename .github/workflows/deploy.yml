@@ -24,13 +24,19 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install Azure CLI and Bicep
-        uses: azure/cli@v2
-        with:
-          azcliversion: latest
-          inlineScript: |
-            az bicep install
-            az bicep version
+      - name: Verify Azure CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Checking Azure CLI..."
+          az --version
+
+      - name: Install and verify Bicep
+        shell: bash
+        run: |
+          set -euo pipefail
+          az bicep install
+          az bicep version
       - name: Bicep build and lint diagnostics
         shell: bash
         run: |
