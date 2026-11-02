@@ -24,7 +24,7 @@ module nsgModule 'networking/nsg.bicep' = {
   params: {
     location: location
     nsgName: vmNetwork.networkSecurityGroupName
-    securityRules: [{ name: 'AllowSSHFromApprovedSource', priority: 100, direction: 'Inbound', access: 'Allow', protocol: 'Tcp', sourcePortRange: '*', destinationPortRange: '22', sourceAddressPrefix: vmNetwork.sshAllowedSourceAddressPrefix, destinationAddressPrefix: '*' }]
+    securityRules: vmNetwork.securityRules
     tags: tags
   }
 }
