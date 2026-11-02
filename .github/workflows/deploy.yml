@@ -147,6 +147,12 @@ jobs:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ needs.validate.outputs.tenant_id }}
           subscription-id: ${{ needs.validate.outputs.subscription_id }}
+      - name: Verify Azure account context
+        shell: bash
+        run: |
+          az account show --output table
+          az account list --all --output table
+
       - name: Verify account context
         run: |
           test "$(az account show --query id -o tsv)" = "${{ needs.validate.outputs.subscription_id }}"
