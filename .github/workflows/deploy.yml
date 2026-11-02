@@ -267,10 +267,32 @@ jobs:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ needs.validate.outputs.tenant_id }}
           subscription-id: ${{ needs.validate.outputs.subscription_id }}
-      - name: Deploy PIM module
+      - name: Generate PIM deployment parameters
+        shell: bash
         run: |
-          jq '{\$schema:"https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",contentVersion:"1.0.0.0",parameters:{principalId:{value:.pim.principal.principalId},roleDefinitionId:{value:(\"/subscriptions/\" + .subscription.subscriptionId + \"/providers/Microsoft.Authorization/roleDefinitions/\" + .pim.role.roleDefinitionId)},justification:{value:.pim.justification},ticketNumber:{value:.pim.ticketInfo.ticketNumber},ticketSystem:{value:.pim.ticketInfo.ticketSystem},duration:{value:.pim.schedule.duration},requestName:{value:(.pim.principal.principalId + "-" + .request.ticketId)}}}' input.resolved.json > params.json
-          az deployment group create --name "BIFROST-PIM-${{ github.run_number }}" --resource-group "${{ needs.validate.outputs.rg_name }}" --template-file modules/pim/pim.bicep --parameters @params.json --output table
+          python - <<'PY'
+          import json, uuid
+          c=json.load(open('input.resolved.json',encoding='utf-8'))
+          sub=c['subscription']['subscriptionId']
+          role=c['pim']['role']['roleDefinitionId']
+          request=str(uuid.uuid5(uuid.NAMESPACE_URL, sub+c['pim']['principal']['principalId']+role+c['request']['ticketId']))
+          data={
+            "$schema":"https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+            "contentVersion":"1.0.0.0",
+            "parameters":{
+              "principalId":{"value":c['pim']['principal']['principalId']},
+              "roleDefinitionId":{"value":f"/subscriptions/{sub}/providers/Microsoft.Authorization/roleDefinitions/{role}"},
+              "justification":{"value":c['pim']['justification']},
+              "ticketNumber":{"value":c['pim']['ticketInfo']['ticketNumber']},
+              "ticketSystem":{"value":c['pim']['ticketInfo']['ticketSystem']},
+              "duration":{"value":c['pim']['schedule']['duration']},
+              "requestName":{"value":request}
+            }
+          }
+          json.dump(data,open('params.json','w'),indent=2)
+          PY
+      - name: Deploy PIM module
+        run: az deployment group create --name "BIFROST-PIM-${{ github.run_number }}" --resource-group "${{ needs.validate.outputs.rg_name }}" --template-file modules/pim/pim.bicep --parameters @params.json --output table
 
   pim-not-requested:
     name: 11 - PIM Eligibility | Not requested
