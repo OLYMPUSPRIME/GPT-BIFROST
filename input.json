@@ -117,6 +117,46 @@
       "nic": "create"
     },
     "virtualMachine": "create",
-    "pim": "create"
-  }
+    "pim": "create",
+    "windowsVirtualMachine": "create"
+  },
+  "virtualMachines": [
+    {
+      "name": "BIFROSTDEVVMWIN001",
+      "location": "centralindia",
+      "resourceGroupName": "BIFROSTDEV001",
+      "vmSize": "Standard_B2s",
+      "osType": "Windows",
+      "adminUsername": "azureadmin",
+      "authenticationType": "Password",
+      "adminPassword": "${WINDOWS_VM_ADMIN_PASSWORD}",
+      "image": {
+        "publisher": "MicrosoftWindowsServer",
+        "offer": "WindowsServer",
+        "sku": "2022-datacenter-azure-edition",
+        "version": "latest"
+      },
+      "osDisk": {
+        "name": "BIFROSTDEVVMWIN001OSDisk",
+        "diskSizeGB": 64,
+        "storageAccountType": "StandardSSD_LRS",
+        "caching": "ReadWrite"
+      },
+      "network": {
+        "networkInterfaceName": "BIFROSTDEVNICWIN001",
+        "publicIp": {
+          "create": true,
+          "name": "BIFROSTDEVVMWIN001PIP",
+          "allocationMethod": "Static",
+          "sku": "Standard"
+        }
+      },
+      "tags": {
+        "Project": "BIFROST",
+        "Environment": "Dev",
+        "TicketId": "PIKE-12345",
+        "DeploymentMethod": "Bicep"
+      }
+    }
+  ]
 }
