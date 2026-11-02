@@ -117,6 +117,6 @@
       "nic": "create"
     },
     "virtualMachine": "create",
-    "pim": "notRequested"
+    "pim": "create"
   }
 }
