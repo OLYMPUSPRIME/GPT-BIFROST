@@ -365,7 +365,7 @@ Before deployment, verify:
 
 1. The Azure subscription exists and is the intended target.
 2. An Entra application/service principal is configured for GitHub OIDC federation.
-3. GitHub Actions variables `AZURE_CLIENT_ID` and `AZURE_TENANT_ID` are configured.
+3. GitHub Actions variables `AZURE_CLIENT_ID` and `AZURE_TENANT_ID` are configured; the tenant variable must match `input.json`.
 4. The federated credential trusts the correct repository and branch/environment.
 5. The deployment identity has required permissions. PIM eligibility and role assignment operations require specific authorization beyond ordinary Contributor.
 6. Parameter files match the Bicep template parameters.
