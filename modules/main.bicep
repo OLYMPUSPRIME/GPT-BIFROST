@@ -101,9 +101,10 @@ module pimModule 'pim/pim.bicep' = if (deployPim && config.pim.enabled) {
   ]
   params: {
     principalId: config.pim.principal.principalId
-    principalType: config.pim.principal.principalType
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', last(split(config.pim.role.roleDefinitionId, '/')))
     justification: config.pim.justification
+    ticketNumber: config.pim.ticketInfo.ticketNumber
+    ticketSystem: config.pim.ticketInfo.ticketSystem
     duration: config.pim.schedule.duration
     requestName: guid(rgResource.id, config.pim.principal.principalId, config.pim.role.roleDefinitionId, 'bifrost-pim-eligibility')
   }
