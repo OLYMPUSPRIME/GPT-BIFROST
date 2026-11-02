@@ -33,7 +33,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for file in modules/resource-group/resource-group.bicep modules/networking/nsg.bicep modules/networking/vnet.bicep modules/networking/public-ip.bicep modules/networking/nic.bicep modules/compute/vm-linux.bicep modules/networking/public-ip.bicep modules/networking/nic.bicep modules/pim/pim.bicep; do
+          for file in modules/resource-group/resource-group.bicep modules/networking/nsg.bicep modules/networking/vnet.bicep modules/networking/public-ip.bicep modules/networking/nic.bicep modules/compute/vm-linux.bicep modules/pim/pim.bicep; do
             echo "Building $file"
             az bicep build --file "$file" --stdout >/dev/null
           done
@@ -75,7 +75,7 @@ jobs:
           check(plan.get('networking',{}).get('subnet')=='create','Subnet deployment plan must be create')
           check(plan.get('networking',{}).get('publicIp')=='create','Public IP deployment plan must be create')
           check(plan.get('networking',{}).get('nic')=='create','NIC deployment plan must be create')
-          check(plan.get('virtualMachine')=='create','VM deployment plan must be create')
+          check(plan.get('virtualMachine')=='create','VM deployment plan must be create')\n          check(plan.get('pim')=='create','PIM deployment plan must be create for testing')
           check(c['virtualMachine']['resourceGroupName']==c['resourceGroup']['name'],'VM RG and RG configuration mismatch')
           check(c['virtualMachine']['sshPublicKey'].startswith('ssh-'),'Valid SSH public key required')
           ip=ipaddress.ip_network(c['virtualMachine']['network']['sshAllowedSourceAddressPrefix'],strict=False)
