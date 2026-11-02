@@ -12,7 +12,7 @@ var vmNetwork = vmConfig.network
 var location = config.deployment.location
 var tags = union(rg.tags, vmConfig.tags)
 
-resource resourceGroup 'Microsoft.Resources/resourceGroups@2022-09-01' = {
+resource rgResource 'Microsoft.Resources/resourceGroups@2022-09-01' = {
   name: rg.name
   location: rg.location
   tags: rg.tags
@@ -20,18 +20,30 @@ resource resourceGroup 'Microsoft.Resources/resourceGroups@2022-09-01' = {
 
 module nsgModule 'networking/nsg.bicep' = {
   name: 'bifrost-nsg-${uniqueString(rg.name, vmNetwork.networkSecurityGroupName)}'
-  scope: resourceGroup
+  scope: resourceGroup(rg.name)
   params: {
     location: location
     nsgName: vmNetwork.networkSecurityGroupName
-    securityRules: []
+    securityRules: [
+      {
+        name: 'AllowSSHFromApprovedSource'
+        priority: 100
+        direction: 'Inbound'
+        access: 'Allow'
+        protocol: 'Tcp'
+        sourcePortRange: '*'
+        destinationPortRange: '22'
+        sourceAddressPrefix: vmNetwork.sshAllowedSourceAddressPrefix
+        destinationAddressPrefix: '*'
+      }
+    ]
     tags: tags
   }
 }
 
 module vnetModule 'networking/vnet.bicep' = {
   name: 'bifrost-vnet-${uniqueString(rg.name, vmNetwork.virtualNetworkName)}'
-  scope: resourceGroup
+  scope: resourceGroup(rg.name)
   dependsOn: [
     nsgModule
   ]
@@ -54,7 +66,7 @@ module vnetModule 'networking/vnet.bicep' = {
 
 module vmModule 'compute/vm.bicep' = {
   name: 'bifrost-vm-${uniqueString(rg.name, vmConfig.name)}'
-  scope: resourceGroup
+  scope: resourceGroup(rg.name)
   dependsOn: [
     vnetModule
     nsgModule
@@ -80,9 +92,9 @@ module vmModule 'compute/vm.bicep' = {
 
 module pimModule 'pim/pim.bicep' = if (deployPim && config.pim.enabled) {
   name: 'bifrost-pim-${uniqueString(rg.name, config.pim.principal.principalId, config.pim.role.roleDefinitionId)}'
-  scope: resourceGroup
+  scope: resourceGroup(rg.name)
   dependsOn: [
-    resourceGroup
+    rgResource
   ]
   params: {
     principalId: config.pim.principal.principalId
@@ -90,11 +102,11 @@ module pimModule 'pim/pim.bicep' = if (deployPim && config.pim.enabled) {
     roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', last(split(config.pim.role.roleDefinitionId, '/')))
     justification: config.pim.justification
     duration: config.pim.schedule.duration
-    requestName: guid(resourceGroup.id, config.pim.principal.principalId, config.pim.role.roleDefinitionId, 'bifrost-pim-eligibility')
+    requestName: guid(rgResource.id, config.pim.principal.principalId, config.pim.role.roleDefinitionId, 'bifrost-pim-eligibility')
   }
 }
 
-output resourceGroupName string = resourceGroup.name
+output resourceGroupName string = rgResource.name
 output virtualMachineName string = vmModule.outputs.vmNameOut
 output virtualMachineId string = vmModule.outputs.vmId
 output networkInterfaceId string = vmModule.outputs.networkInterfaceId
