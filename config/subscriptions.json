@@ -2,7 +2,14 @@
   {
     "app_name": "BIFROST-SC",
     "environment": "dev",
-    "sub_id": "<BIFROST-SC-SUBSCRIPTION-ID>",
+    "sub_id": "efa057fe-e3b8-462a-98ba-08e0024d2442",
+    "input_file": "input.json",
+    "param_file": "environments/dev.bicepparam"
+  }
+  {
+    "app_name": "PROMETHEUS-N-Azure_DEV",
+    "environment": "dev",
+    "sub_id": "47e11824-86bc-41f8-9dbd-2816b994a6a2",
     "input_file": "input.json",
     "param_file": "environments/dev.bicepparam"
   }
