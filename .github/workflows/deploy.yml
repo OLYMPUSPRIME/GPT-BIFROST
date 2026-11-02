@@ -49,7 +49,28 @@ jobs:
           [[ "$ENVIRONMENT" == "dev" ]] || { echo "This workflow is currently restricted to dev."; exit 1; }
           [[ "$SUBSCRIPTION_ID" == "efa057fe-e3b8-462a-98ba-08e0024d2442" ]] || { echo "Subscription ID does not match the approved BIFROST-SC subscription."; exit 1; }
           [[ "$SSH_KEY" != "<SSH-PUBLIC-KEY>" && "$SSH_KEY" == ssh-* ]] || { echo "Set virtualMachine.sshPublicKey to a valid SSH public key before deploying."; exit 1; }
-          [[ "$SSH_SOURCE" != "<YOUR-PUBLIC-IP>/32" && "$SSH_SOURCE" == */* ]] || { echo "Set virtualMachine.network.sshAllowedSourceAddressPrefix to your public IP/CIDR (prefer /32)."; exit 1; }
+          [[ "$SSH_SOURCE" != "<YOUR-PUBLIC-IP>/32" && "$SSH_SOURCE" == */* ]] || { echo "Set virtualMachine.network.sshAllowedSourceAddressPrefix to your public IP/CIDR."; exit 1; }
+
+          python - <<'PY'
+          import ipaddress, json
+          with open("input.json", encoding="utf-8") as f:
+              data = json.load(f)
+          rg_name = data["resourceGroup"]["name"]
+          vm_rg = data["virtualMachine"]["resourceGroupName"]
+          pim_rg = data["pim"]["scope"]["resourceGroupName"]
+          if vm_rg != rg_name:
+              raise SystemExit("virtualMachine.resourceGroupName must match resourceGroup.name")
+          if data["pim"]["enabled"] and pim_rg != rg_name:
+              raise SystemExit("PIM scope Resource Group must match resourceGroup.name in this workflow")
+          cidr = data["virtualMachine"]["network"]["sshAllowedSourceAddressPrefix"]
+          try:
+              network = ipaddress.ip_network(cidr, strict=False)
+          except ValueError as exc:
+              raise SystemExit(f"SSH source CIDR is invalid: {exc}")
+          if network.prefixlen != network.max_prefixlen:
+              raise SystemExit("Use a single trusted SSH source IP (/32 for IPv4 or /128 for IPv6), not a broad CIDR.")
+          print("Resource group, PIM scope, and SSH source IP checks passed.")
+          PY
 
           echo "subscription_id=$SUBSCRIPTION_ID" >> "$GITHUB_OUTPUT"
           echo "tenant_id=$TENANT_ID" >> "$GITHUB_OUTPUT"
