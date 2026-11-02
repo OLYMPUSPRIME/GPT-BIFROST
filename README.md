@@ -371,3 +371,83 @@ flowchart TD
 7. Remove the temporary file, including on failure (use an always-run cleanup step).
 
 The generated parameter file should not be committed or uploaded as an artifact if it contains sensitive values. Prefer GitHub Secrets, Azure Key Vault, or secure runtime parameters for secrets; never put passwords or client secrets in `input.json`.
+
+
+## PIM configuration: finding Principal ID and Role Definition ID
+
+The root `input.json` PIM configuration requires:
+
+- `pim.principal.principalId`: Microsoft Entra ID **Object ID** of the user, group, or service principal that will receive eligible access.
+- `pim.role.roleDefinitionId`: Azure RBAC **Role Definition ID** for the role being requested.
+
+### Get the Principal ID (user)
+
+Sign in to Azure CLI:
+
+```bash
+az login
+```
+
+To retrieve the Object ID of the currently signed-in user:
+
+```bash
+az ad signed-in-user show --query id --output tsv
+```
+
+To retrieve the Object ID for a specific user by UPN or email:
+
+```bash
+az ad user show \\
+  --id "user@company.com" \\
+  --query id \\
+  --output tsv
+```
+
+Replace `user@company.com` with the intended PIM recipient. For a group, use `az ad group show --group "<group-name-or-id>" --query id --output tsv`; set `principalType` to `Group` in `input.json`.
+
+### Get the Contributor Role Definition ID
+
+The Azure built-in **Contributor** role definition GUID is:
+
+```text
+b24988ac-6180-42a0-ab88-20f7382dd24c
+```
+
+You can retrieve it with Azure CLI:
+
+```bash
+az role definition list \\
+  --name "Contributor" \\
+  --query "[0].name" \\
+  --output tsv
+```
+
+The command returns the role definition GUID. To retrieve the full role definition resource ID:
+
+```bash
+az role definition list \\
+  --name "Contributor" \\
+  --query "[0].id" \\
+  --output tsv
+```
+
+Use the GUID or full resource ID according to the parameter contract of the PIM Bicep module. The Contributor role grants broad resource-management permissions, but it does **not** generally grant permission to assign roles or create PIM eligibility assignments.
+
+### Example PIM input
+
+```json
+"pim": {
+  "enabled": true,
+  "assignmentType": "Eligibility",
+  "principal": {
+    "principalId": "<ENTRA-USER-OBJECT-ID>",
+    "principalType": "User"
+  },
+  "role": {
+    "roleName": "Contributor",
+    "roleDefinitionId": "b24988ac-6180-42a0-ab88-20f7382dd24c"
+  }
+}
+```
+
+**Important:** Principal ID is not the user's email/UPN, subscription ID, or tenant ID. It must be the Entra Object ID of the access recipient. Confirm the recipient and scope before deploying a privileged assignment.
