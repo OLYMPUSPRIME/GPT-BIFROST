@@ -33,7 +33,6 @@
     "vmSize": "Standard_B2s",
     "osType": "Linux",
     "adminUsername": "azureuser",
-    "adminPasswordSecretName": "BIFROST-VM-ADMIN-PASSWORD",
     "authenticationType": "SSH",
     "sshPublicKey": "<SSH-PUBLIC-KEY>",
     "image": {
