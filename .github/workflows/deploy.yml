@@ -42,7 +42,7 @@ jobs:
         run: |
           set -euo pipefail
           az bicep build --file modules/main.bicep --stdout >/dev/null
-          az bicep build --file modules/compute/vm.bicep --stdout >/dev/null
+          az bicep build --file modules/compute/vm-linux.bicep --stdout >/dev/null
           az bicep build --file modules/networking/vnet.bicep --stdout >/dev/null
           az bicep build --file modules/networking/nsg.bicep --stdout >/dev/null
           az bicep build --file modules/pim/pim.bicep --stdout >/dev/null
