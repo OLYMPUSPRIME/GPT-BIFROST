@@ -45,21 +45,26 @@ flowchart TD
     D --> E["Azure login with OIDC"]
     E --> F["Subscription What-If"]
     F --> G{"deploy_resources = true?"}
-    G -->|Yes| H["Deploy using same JSON input"]
+    G -->|Yes| H["Deploy"]
     G -->|No| I["Preview only"]
   end
   subgraph Azure["🟦 Azure"]
-    H --> J["ARM deploys modules/main.bicep"]
-    J --> K["Inspect deployment result"]
+    H --> J["ARM deploys main.bicep"]
+    J --> K["Inspect result"]
   end
-  classDef github fill:#f3e8ff,stroke:#7e22ce,color:#581c87,stroke-width:1.5px;
-  classDef azure fill:#dbeafe,stroke:#2563eb,color:#1e3a8a,stroke-width:1.5px;
-  classDef action fill:#dcfce7,stroke:#16a34a,color:#14532d,stroke-width:1.5px;
-  class A,B,C,D,E,F,G,I github;
-  class H,J,K azure;
+  classDef gh fill:#f3e8ff,stroke:#7e22ce,color:#581c87;
+  classDef az fill:#dbeafe,stroke:#2563eb,color:#1e3a8a;
+  class A,B,C,D,E,F,G,I gh;
+  class H,J,K az;
 ```
 
-The updated `.github/workflows/deploy.yml` is **manual-only** (`workflow_dispatch`) to prevent accidental deployment on every push. It validates root `input.json`, compiles Bicep, generates a temporary `.bicepparam`, logs in with OIDC, and runs What-If. Deployment is opt-in using `deploy_resources`; PIM is separately opt-in using `deploy_pim`. Configure the GitHub environment `bifrost-dev` with approval protection if a deployment approval gate is required.
+The workflow is **manual-only** using `workflow_dispatch`; it does not deploy automatically on push. It checks out the selected branch, validates `input.json`, builds `modules/main.bicep`, generates a temporary parameter file, authenticates using OIDC, and runs What-If.
+
+- `deploy_resources=false`: preview only (default).
+- `deploy_resources=true`: deploys after the What-If job succeeds.
+- `deploy_pim=true`: includes PIM eligibility in the deployment. This is separately opt-in and requires privileged authorization.
+
+Configure GitHub repository variables `AZURE_CLIENT_ID` and `AZURE_TENANT_ID`. Configure the `bifrost-dev` GitHub environment with required reviewers if an approval gate is desired.
 
 ---
 
@@ -191,50 +196,51 @@ PIM eligibility is optionally orchestrated by `modules/main.bicep` when both `in
 
 ## 🔄 JSON-driven deployment
 
-The planned approach uses root `input.json` as the resource configuration source. GitHub Actions parses and validates it, maps values to Bicep parameters, creates a temporary parameter file, performs What-If and deployment, and cleans up the generated file.
-
-> ⚠️ **Implementation status:** This is the target workflow. The current `deploy.yml` still uses the existing subscription matrix and parameter-file path. The workflow and Bicep parameter schema must be updated before this diagram represents actual workflow behavior.
+Root `input.json` is the source of configuration for this workflow. GitHub Actions writes the JSON object into a temporary `.bicepparam` file and passes it to `modules/main.bicep` as the `config` object.
 
 ```mermaid
 flowchart TD
-  subgraph Source["📄 Configuration"]
-    A["Root input.json"]
+  subgraph Config["📄 Configuration"]
+    A["input.json"]
   end
-  subgraph CI["⚙️ GitHub Actions"]
-    B["Read JSON"] --> C["Validate required fields"]
+  subgraph Workflow["⚙️ GitHub Actions"]
+    B["Validate JSON and required fields"] --> C["Bicep build"]
     C --> D["Generate temporary .bicepparam"]
-    D --> E["Azure login with OIDC"]
-    E --> F["Bicep What-If"]
-    F --> G["Bicep deployment"]
-    G --> H["Cleanup temporary parameter file"]
+    D --> E["Azure OIDC login"]
+    E --> F["What-If"]
+    F --> G{"Deploy checkbox enabled?"}
+    G -->|No| H["Preview only"]
+    G -->|Yes| I["Deploy with same input"]
+    I --> J["Cleanup generated parameter file"]
   end
-  subgraph Target["☁️ Azure"]
-    E --> I["Authenticate to target subscription"]
-    I --> F
-    G --> J["Azure Resource Manager"]
+  subgraph Azure["☁️ Azure"]
+    E --> K["BIFROST-SC"]
+    K --> F
+    I --> L["Resource Group + VNet + NSG + Linux VM"]
+    I -. optional .-> M["PIM eligibility request"]
   end
   A --> B
   classDef source fill:#fef9c3,stroke:#ca8a04,color:#713f12;
-  classDef ci fill:#f3e8ff,stroke:#9333ea,color:#581c87;
+  classDef actions fill:#f3e8ff,stroke:#9333ea,color:#581c87;
   classDef azure fill:#dbeafe,stroke:#2563eb,color:#1e3a8a;
   class A source;
-  class B,C,D,E,F,G,H ci;
-  class I,J azure;
+  class B,C,D,E,F,G,H,I,J actions;
+  class K,L,M azure;
 ```
 
-### Expected sequence
+### Deployment behavior
 
-1. Checkout repository and read root `input.json`.
-2. Validate JSON syntax, required fields, allowed values, and subscription target.
-3. Map the input into the parameters declared by the chosen Bicep template.
-4. Generate a temporary parameter file on the runner.
-5. Authenticate to Azure using OIDC.
-6. Run What-If and deployment using the **same generated parameter file**.
-7. Clean up the temporary file, including on failure.
+1. Validate JSON syntax and ensure the request is marked approved.
+2. Restrict the run to the BIFROST-SC subscription ID and the `dev` environment.
+3. Require a valid SSH public key and a **single trusted SSH source IP** (`/32` IPv4 or `/128` IPv6).
+4. Check that the VM and PIM scope Resource Group match the root Resource Group.
+5. Generate the temporary parameter file on the runner.
+6. Authenticate to Azure with OIDC and verify the logged-in subscription/tenant.
+7. Run What-If.
+8. Deploy only when the manual `deploy_resources` input is true.
+9. Remove the generated parameter file.
 
-🔐 Do not commit or upload generated parameter files containing secrets. Use GitHub Secrets, Azure Key Vault, or secure runtime parameters for secrets. Do not store passwords or client secrets in `input.json`.
-
----
+The temporary parameter file is not committed. Do not put passwords, client secrets, or other secrets in `input.json`. The current Linux VM uses SSH key authentication, not password authentication.
 
 ## 🔐 PIM configuration guide
 
@@ -369,34 +375,26 @@ Before deployment, verify:
 
 ## 🚀 Deployment and validation
 
-### Bicep build
+### Before running the workflow
 
-Run from the repository root:
+- Replace `virtualMachine.sshPublicKey` with your **public** SSH key (never paste the private key).
+- Replace `virtualMachine.network.sshAllowedSourceAddressPrefix` with your current public IP in host CIDR format, e.g. `203.0.113.10/32`. This example IP is documentation-only.
+- Verify the subscription ID and tenant ID in `input.json`.
+- Confirm the Azure app's federated credential trusts the repository and selected branch.
+- Confirm the GitHub variables `AZURE_CLIENT_ID` and `AZURE_TENANT_ID` are configured.
+- Confirm the deployment identity has permissions to create the RG, VNet, NSG, public IP, NIC, and VM. PIM requires additional privileged authorization.
 
-```bash
-az bicep build --file modules/main.bicep
-```
+### Run from GitHub UI
 
-### Subscription What-If
+1. Open **Actions → BIFROST | Input JSON Deployment**.
+2. Choose the `feature/PIM_RBAC` branch.
+3. Keep `deploy_resources` unchecked for What-If only.
+4. Select **Run workflow** and review the What-If output.
+5. If approved, run again with `deploy_resources` checked.
+6. Select `deploy_pim` only when you intentionally want to create PIM eligibility and have the required permissions.
+7. Review the GitHub `bifrost-dev` environment approval (if configured) and Azure deployment status.
 
-```bash
-az deployment sub what-if --location eastus --template-file modules/main.bicep --parameters environments/dev.bicepparam
-```
-
-### Current deployment behavior
-
-The current workflow triggers on push to `Dev`. Before running:
-
-1. Review `config/subscriptions.json` and verify the subscription and parameter file.
-2. Review the deployment inputs and `landingZones` structure.
-3. Check Azure identity, permissions, and workflow settings.
-4. Review What-If output.
-5. Deploy only after the appropriate review/approval.
-6. Verify deployment result in Azure and GitHub Actions.
-
-The deployment location in the current workflow is `eastus`. Change it only through a reviewed configuration update.
-
----
+The deployment region is taken from `input.json` (currently `centralindia`). This workflow is currently restricted to BIFROST-SC and `dev`; it does not use the old subscription matrix or `environments/dev.bicepparam`.
 
 ## 📊 PIKE alignment and implementation gaps
 
