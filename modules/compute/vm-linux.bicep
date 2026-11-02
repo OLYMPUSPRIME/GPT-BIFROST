@@ -63,9 +63,6 @@ resource vm 'Microsoft.Compute/virtualMachines@2024-03-01' = {
       ]
     }
   }
-  dependsOn: [
-    nic
-  ]
 }
 
 output vmId string = vm.id
