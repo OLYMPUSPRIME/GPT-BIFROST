@@ -67,7 +67,7 @@ module vnetModule 'networking/vnet.bicep' = {
   }
 }
 
-module vmModule 'compute/vm.bicep' = {
+module vmModule 'compute/vm-linux.bicep' = {
   name: 'bifrost-vm-${uniqueString(rg.name, vmConfig.name)}'
   scope: resourceGroup(rg.name)
   dependsOn: [
