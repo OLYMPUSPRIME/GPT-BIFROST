@@ -43,11 +43,13 @@ jobs:
           TENANT_ID=$(jq -r '.subscription.tenantId' input.json)
           LOCATION=$(jq -r '.deployment.location' input.json)
           SSH_KEY=$(jq -r '.virtualMachine.sshPublicKey' input.json)
+          SSH_SOURCE=$(jq -r '.virtualMachine.network.sshAllowedSourceAddressPrefix' input.json)
 
           [[ "$APPROVED" == "true" ]] || { echo "Request is not marked approved in input.json"; exit 1; }
           [[ "$ENVIRONMENT" == "dev" ]] || { echo "This workflow is currently restricted to dev."; exit 1; }
           [[ "$SUBSCRIPTION_ID" == "efa057fe-e3b8-462a-98ba-08e0024d2442" ]] || { echo "Subscription ID does not match the approved BIFROST-SC subscription."; exit 1; }
           [[ "$SSH_KEY" != "<SSH-PUBLIC-KEY>" && "$SSH_KEY" == ssh-* ]] || { echo "Set virtualMachine.sshPublicKey to a valid SSH public key before deploying."; exit 1; }
+          [[ "$SSH_SOURCE" != "<YOUR-PUBLIC-IP>/32" && "$SSH_SOURCE" == */* ]] || { echo "Set virtualMachine.network.sshAllowedSourceAddressPrefix to your public IP/CIDR (prefer /32)."; exit 1; }
 
           echo "subscription_id=$SUBSCRIPTION_ID" >> "$GITHUB_OUTPUT"
           echo "tenant_id=$TENANT_ID" >> "$GITHUB_OUTPUT"
