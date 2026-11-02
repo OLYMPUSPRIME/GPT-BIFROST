@@ -21,6 +21,9 @@ resource rgResource 'Microsoft.Resources/resourceGroups@2022-09-01' = {
 module nsgModule 'networking/nsg.bicep' = {
   name: 'bifrost-nsg-${uniqueString(rg.name, vmNetwork.networkSecurityGroupName)}'
   scope: resourceGroup(rg.name)
+  dependsOn: [
+    rgResource
+  ]
   params: {
     location: location
     nsgName: vmNetwork.networkSecurityGroupName
