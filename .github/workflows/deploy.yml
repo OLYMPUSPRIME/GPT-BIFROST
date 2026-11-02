@@ -158,11 +158,40 @@ jobs:
           test "$(az account show --query id -o tsv)" = "${{ needs.validate.outputs.subscription_id }}"
           test "$(az account show --query tenantId -o tsv)" = "${{ needs.validate.outputs.tenant_id }}"
       - name: Generate temporary .bicepparam from input.json
+        shell: bash
         run: |
-          printf "using './modules/main.bicep'\nparam config = " > deployment.generated.bicepparam
-          jq -c --arg subscriptionId "${{ needs.validate.outputs.subscription_id }}" '.subscription.subscriptionId = $subscriptionId' input.json >> deployment.generated.bicepparam
-          printf "\nparam deployPim = %s\n" "${{ inputs.deploy_pim }}" >> deployment.generated.bicepparam
+          set -euo pipefail
+          jq --arg subscriptionId "${{ needs.validate.outputs.subscription_id }}" '.subscription.subscriptionId = $subscriptionId' input.json > input.generated.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          def bicep(value):
+              if isinstance(value, dict):
+                  return "{ " + ", ".join(f"{key}: {bicep(item)}" for key, item in value.items()) + " }"
+              if isinstance(value, list):
+                  return "[" + ", ".join(bicep(item) for item in value) + "]"
+              if isinstance(value, str):
+                  return "'" + value.replace("'", "''") + "'"
+              if value is True:
+                  return "true"
+              if value is False:
+                  return "false"
+              if value is None:
+                  return "null"
+              return str(value)
+
+          config = json.loads(Path("input.generated.json").read_text(encoding="utf-8"))
+          deploy_pim = "${{ inputs.deploy_pim }}".lower() == "true"
+          Path("deployment.generated.bicepparam").write_text(
+              "using './modules/main.bicep'\n"
+              f"param config = {bicep(config)}\n"
+              f"param deployPim = {str(deploy_pim).lower()}\n",
+              encoding="utf-8"
+          )
+          PY
           chmod 600 deployment.generated.bicepparam
+          rm -f input.generated.json
       - name: Run What-If
         run: |
           az deployment sub what-if --name "BIFROST-WhatIf-${{ github.run_number }}" --location "${{ needs.validate.outputs.location }}" --template-file modules/main.bicep --parameters deployment.generated.bicepparam
