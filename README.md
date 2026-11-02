@@ -397,10 +397,7 @@ az ad signed-in-user show --query id --output tsv
 To retrieve the Object ID for a specific user by UPN or email:
 
 ```bash
-az ad user show \\
-  --id "user@company.com" \\
-  --query id \\
-  --output tsv
+az ad user show --id "user@company.com" --query id --output tsv
 ```
 
 Replace `user@company.com` with the intended PIM recipient. For a group, use `az ad group show --group "<group-name-or-id>" --query id --output tsv`; set `principalType` to `Group` in `input.json`.
@@ -416,19 +413,13 @@ b24988ac-6180-42a0-ab88-20f7382dd24c
 You can retrieve it with Azure CLI:
 
 ```bash
-az role definition list \\
-  --name "Contributor" \\
-  --query "[0].name" \\
-  --output tsv
+az role definition list --name "Contributor" --query "[0].name" --output tsv
 ```
 
 The command returns the role definition GUID. To retrieve the full role definition resource ID:
 
 ```bash
-az role definition list \\
-  --name "Contributor" \\
-  --query "[0].id" \\
-  --output tsv
+az role definition list --name "Contributor" --query "[0].id" --output tsv
 ```
 
 Use the GUID or full resource ID according to the parameter contract of the PIM Bicep module. The Contributor role grants broad resource-management permissions, but it does **not** generally grant permission to assign roles or create PIM eligibility assignments.
