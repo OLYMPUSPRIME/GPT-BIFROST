@@ -135,6 +135,7 @@ jobs:
     name: 03 - Azure What-If preview
     needs: validate
     runs-on: ubuntu-latest
+    environment: bifrost-dev
     steps:
       - uses: actions/checkout@v4
       - name: Azure Login (OIDC)
