@@ -20,6 +20,9 @@ param justification string
 @description('Eligibility duration ISO 8601, e.g. P90D.')
 param duration string = 'P90D'
 
+@description('Start time for PIM eligibility. Defaults to deployment UTC time.')
+param startDateTime string = utcNow('yyyy-MM-ddTHH:mm:ssZ')
+
 @description('Deterministic schedule request GUID.')
 param requestName string
 
@@ -32,7 +35,7 @@ resource eligibleAssignment 'Microsoft.Authorization/roleEligibilityScheduleRequ
     requestType: 'AdminAssign'
     justification: justification
     scheduleInfo: {
-      startDateTime: utcNow('yyyy-MM-ddTHH:mm:ssZ')
+      startDateTime: startDateTime
       expiration: {
         type: 'AfterDuration'
         duration: duration
