@@ -60,7 +60,8 @@
         "name": "BIFROSTDEVVM001PIP",
         "allocationMethod": "Static",
         "sku": "Standard"
-      }
+      },
+      "sshAllowedSourceAddressPrefix": "<YOUR-PUBLIC-IP>/32"
     },
     "tags": {
       "Project": "BIFROST",
