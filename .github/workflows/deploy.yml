@@ -33,7 +33,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for file in modules/resource-group/resource-group.bicep modules/networking/nsg.bicep modules/networking/vnet.bicep modules/networking/public-ip.bicep modules/networking/nic.bicep modules/compute/vm-linux.bicep modules/pim/pim.bicep; do
+          for file in modules/resource-group/resource-group.bicep modules/networking/nsg.bicep modules/networking/vnet.bicep modules/networking/public-ip.bicep modules/networking/nic.bicep modules/compute/vm-linux.bicep modules/networking/public-ip.bicep modules/networking/nic.bicep modules/pim/pim.bicep; do
             echo "Building $file"
             az bicep build --file "$file" --stdout >/dev/null
           done
@@ -148,7 +148,7 @@ jobs:
 
   nsg:
     name: 06 - Network Security Group | Create
-    needs: [resource-group]
+    needs: [resource-group,validate]
     if: inputs.deploy_resources == true
     runs-on: ubuntu-latest
     environment: bifrost-dev
@@ -169,7 +169,7 @@ jobs:
 
   vnet:
     name: 07 - Virtual Network and Subnet | Create
-    needs: [nsg]
+    needs: [nsg,validate]
     if: inputs.deploy_resources == true
     runs-on: ubuntu-latest
     environment: bifrost-dev
@@ -190,7 +190,7 @@ jobs:
 
   public-ip:
     name: 08 - Public IP | Create
-    needs: [vnet]
+    needs: [vnet,validate]
     if: inputs.deploy_resources == true
     runs-on: ubuntu-latest
     environment: bifrost-dev
@@ -211,7 +211,7 @@ jobs:
 
   nic:
     name: 09 - Network Interface | Create and attach
-    needs: [public-ip]
+    needs: [public-ip,validate]
     if: inputs.deploy_resources == true
     runs-on: ubuntu-latest
     environment: bifrost-dev
@@ -232,7 +232,7 @@ jobs:
 
   vm:
     name: 10 - Linux Virtual Machine | Create and attach
-    needs: [nic]
+    needs: [nic,validate]
     if: inputs.deploy_resources == true
     runs-on: ubuntu-latest
     environment: bifrost-dev
@@ -253,7 +253,7 @@ jobs:
 
   pim:
     name: 11 - PIM Eligibility | Optional
-    needs: [vm]
+    needs: [vm,validate]
     if: inputs.deploy_resources == true && inputs.deploy_pim == true
     runs-on: ubuntu-latest
     environment: bifrost-dev
@@ -269,7 +269,7 @@ jobs:
           subscription-id: ${{ needs.validate.outputs.subscription_id }}
       - name: Deploy PIM module
         run: |
-          jq '{\$schema:"https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",contentVersion:"1.0.0.0",parameters:{principalId:{value:.pim.principal.principalId},roleDefinitionId:{value:(.pim.role.roleDefinitionId)},justification:{value:.pim.justification},ticketNumber:{value:.pim.ticketInfo.ticketNumber},ticketSystem:{value:.pim.ticketInfo.ticketSystem},duration:{value:.pim.schedule.duration},requestName:{value:(.pim.principal.principalId + "-" + .request.ticketId)}}}' input.resolved.json > params.json
+          jq '{\$schema:"https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",contentVersion:"1.0.0.0",parameters:{principalId:{value:.pim.principal.principalId},roleDefinitionId:{value:(\"/subscriptions/\" + .subscription.subscriptionId + \"/providers/Microsoft.Authorization/roleDefinitions/\" + .pim.role.roleDefinitionId)},justification:{value:.pim.justification},ticketNumber:{value:.pim.ticketInfo.ticketNumber},ticketSystem:{value:.pim.ticketInfo.ticketSystem},duration:{value:.pim.schedule.duration},requestName:{value:(.pim.principal.principalId + "-" + .request.ticketId)}}}' input.resolved.json > params.json
           az deployment group create --name "BIFROST-PIM-${{ github.run_number }}" --resource-group "${{ needs.validate.outputs.rg_name }}" --template-file modules/pim/pim.bicep --parameters @params.json --output table
 
   pim-not-requested:
