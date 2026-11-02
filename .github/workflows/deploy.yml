@@ -103,7 +103,8 @@ jobs:
           need(c["request"]["environment"]=="dev","Only dev environment is supported")
           need(c["subscription"]["name"]=="BIFROST-SC","Only BIFROST-SC is permitted")
           need(c["subscription"]["subscriptionId"]=="efa057fe-e3b8-462a-98ba-08e0024d2442","Subscription ID does not match BIFROST-SC allowlist")
-          need(c["subscription"]["tenantId"]==os.environ["AZURE_TENANT_ID"],"input.json tenantId must match AZURE_TENANT_ID")
+          tenant_id=os.environ.get("AZURE_TENANT_ID","").strip()
+          need(bool(tenant_id),"GitHub Actions variable AZURE_TENANT_ID is missing or empty")
           rg=c["resourceGroup"]["name"]; vm=c["virtualMachine"]; net=vm["network"]; pim=c["pim"]
           need(vm["resourceGroupName"]==rg,"VM resourceGroupName must equal resourceGroup.name")
           need(pim["scope"]["resourceGroupName"]==rg,"PIM scope RG must equal resourceGroup.name")
@@ -111,7 +112,7 @@ jobs:
           ip=ipaddress.ip_network(net["sshAllowedSourceAddressPrefix"],strict=False)
           need(ip.prefixlen==ip.max_prefixlen,"SSH CIDR must be one host (/32 or /128)")
           values={
-          "subscription_id":c["subscription"]["subscriptionId"],"tenant_id":c["subscription"]["tenantId"],
+          "subscription_id":c["subscription"]["subscriptionId"],"tenant_id":tenant_id,
           "location":c["deployment"]["location"],"rg_name":rg,"vm_name":vm["name"],
           "vnet_name":net["virtualNetworkName"],"subnet_name":net["subnetName"],"nsg_name":net["networkSecurityGroupName"],
           "nic_name":net["networkInterfaceName"],"pip_name":net["publicIp"]["name"],"ssh_source":net["sshAllowedSourceAddressPrefix"],
