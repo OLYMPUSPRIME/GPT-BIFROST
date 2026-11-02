@@ -34,33 +34,32 @@ BIFROST contains reusable Azure Bicep modules and GitHub Actions workflows. The 
 
 > **Current-state note:** Jira intake, cost approval, approval gates, requester notifications, and external monitoring are not all implemented in the current GitHub Actions workflow. Diagrams in this README distinguish the target process from current behavior.
 
-### 🧭 Current workflow (existing implementation)
+### 🧭 Current workflow (manual workflow dispatch)
 
 ```mermaid
 flowchart TD
   subgraph GitHub["🟪 GitHub Actions"]
-    A["Push to Dev branch"] --> B["Workflow starts"]
-    B --> C["Validate config/subscriptions.json"]
-    C --> D["Select dev matrix entry"]
+    A["Run workflow manually on feature/PIM_RBAC"] --> B["Validate root input.json"]
+    B --> C["Build Bicep"]
+    C --> D["Generate temporary .bicepparam"]
     D --> E["Azure login with OIDC"]
-    E --> F["Read environment .bicepparam"]
-    F --> G["Run subscription What-If"]
-    G --> H["Run subscription deployment"]
+    E --> F["Subscription What-If"]
+    F --> G{"deploy_resources = true?"}
+    G -->|Yes| H["Deploy using same JSON input"]
+    G -->|No| I["Preview only"]
   end
   subgraph Azure["🟦 Azure"]
-    H --> I["ARM deploys modules/main.bicep"]
-    I --> J["Inspect deployment result"]
+    H --> J["ARM deploys modules/main.bicep"]
+    J --> K["Inspect deployment result"]
   end
   classDef github fill:#f3e8ff,stroke:#7e22ce,color:#581c87,stroke-width:1.5px;
   classDef azure fill:#dbeafe,stroke:#2563eb,color:#1e3a8a,stroke-width:1.5px;
   classDef action fill:#dcfce7,stroke:#16a34a,color:#14532d,stroke-width:1.5px;
-  class A,B,C,D,E,F,G,H github;
-  class I,J azure;
+  class A,B,C,D,E,F,G,I github;
+  class H,J,K azure;
 ```
 
-The existing `.github/workflows/deploy.yml` currently triggers on pushes to `Dev`, filters `config/subscriptions.json` for `dev`, authenticates using `azure/login@v2` and OIDC, then runs `what-if` and `az deployment sub create`.
-
-⚠️ **Current workflow caveat:** The VM administrator password is generated separately for What-If and deployment. This means the two stages do not use the same generated password. Also, deployment currently follows What-If without a separate human approval gate. Treat it as a test workflow until these controls are reviewed.
+The updated `.github/workflows/deploy.yml` is **manual-only** (`workflow_dispatch`) to prevent accidental deployment on every push. It validates root `input.json`, compiles Bicep, generates a temporary `.bicepparam`, logs in with OIDC, and runs What-If. Deployment is opt-in using `deploy_resources`; PIM is separately opt-in using `deploy_pim`. Configure the GitHub environment `bifrost-dev` with approval protection if a deployment approval gate is required.
 
 ---
 
@@ -186,7 +185,7 @@ flowchart TD
 | PIM | Eligible Azure RBAC access | Principal Object ID, role ID, PIM authorization |
 | RBAC | Direct role assignment | Principal Object ID, role ID, role-assignment authorization |
 
-PIM and RBAC are separate modules and are not currently orchestrated from `modules/main.bicep`.
+PIM eligibility is optionally orchestrated by `modules/main.bicep` when both `input.json` enables PIM and the workflow input `deploy_pim` is true. RBAC direct assignment remains a separate module.
 
 ---
 
@@ -406,14 +405,14 @@ The deployment location in the current workflow is `eastus`. Change it only thro
 | PIKE step | Status | Current note |
 |---|---|---|
 | Requester / Jira | ⏳ Not implemented | Jira intake is not wired into workflow |
-| Request parameters | 🟡 Partial | Existing matrix and parameter files; JSON request mapping planned |
+| Request parameters | 🟢 Implemented for this workflow | Root JSON parsed and passed to Bicep |
 | New vs existing project | ⏳ Not automated | Requires assessment flow |
 | Standards / landing zone | 🟡 Partial | Reusable modules exist; enforcement incomplete |
 | Cost analysis | ⏳ Not implemented | No cost gate |
-| Approval / Ready status | ⏳ Not implemented | Push-to-Dev is current trigger |
+| Approval / Ready status | 🟡 Partial | Manual workflow dispatch; request approval field is checked |
 | Jira automation | ⏳ Not implemented | No ticket webhook/API intake |
 | Bicep module selection | 🟡 Partial | Modules exist; dynamic mapping needs work |
-| GitHub Actions / Azure deployment | 🟡 Partial | OIDC, What-If, deploy are present |
+| GitHub Actions / Azure deployment | 🟢 Implemented | OIDC, What-If, optional deploy, Linux SSH VM module |
 | Mandatory tagging | 🟡 Partial | Some templates accept tags; universal enforcement not proven |
 | Result reporting | 🟡 Partial | Azure/GitHub status available; no structured Jira result |
 | Jira update / requester notification | ⏳ Not implemented | Integration pending |
@@ -426,9 +425,9 @@ The deployment location in the current workflow is `eastus`. Change it only thro
 3. Add new-project vs existing-environment assessment.
 4. Enforce approved naming, SKU, OS, region, network, and security standards.
 5. Add cost estimation and formal approval gates.
-6. Map validated request JSON to Bicep parameters.
-7. Add Bicep build, lint, policy checks, and What-If review.
-8. Use secure secret handling and consistent What-If/deployment parameters.
+6. Extend JSON schema and module coverage for additional resource types.
+7. Add lint, policy checks, and mandatory review/approval controls.
+8. Add Azure Key Vault integration if future resources require secrets.
 9. Enforce mandatory tags across supported resources.
 10. Capture deployment status, resource IDs, and errors in structured outputs.
 11. Update Jira and notify requester on completion.
