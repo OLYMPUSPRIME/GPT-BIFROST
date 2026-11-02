@@ -1,86 +1,150 @@
-name: Deploy Azure Resources
+name: BIFROST | Input JSON Deployment
 
 on:
-    push:
-        branches:
-          -   Dev
-       
+  workflow_dispatch:
+    inputs:
+      deploy_resources:
+        description: 'Run deployment after What-If (otherwise What-If only)'
+        type: boolean
+        required: true
+        default: false
+      deploy_pim:
+        description: 'Create the PIM eligibility request (requires separate privileged permissions)'
+        type: boolean
+        required: true
+        default: false
 
 permissions:
   id-token: write
   contents: read
 
 jobs:
-  generate-matrix:
+  validate:
+    name: Validate input and Bicep
     runs-on: ubuntu-latest
-
     outputs:
-      matrix: ${{ steps.set-matrix.outputs.matrix }}
-
+      subscription_id: ${{ steps.config.outputs.subscription_id }}
+      tenant_id: ${{ steps.config.outputs.tenant_id }}
+      location: ${{ steps.config.outputs.location }}
     steps:
-      - name: Checkout Repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Generate Matrix
-        id: set-matrix
+      - name: Validate input.json and extract deployment values
+        id: config
         shell: bash
         run: |
-          jq empty config/subscriptions.json
+          set -euo pipefail
+          jq empty input.json
 
-          JSON_CONTENT=$(jq -c \
-            '[ .[] | select(.environment == "dev") ]' \
-            config/subscriptions.json)
+          APPROVED=$(jq -r '.request.approved' input.json)
+          ENVIRONMENT=$(jq -r '.request.environment' input.json)
+          SUBSCRIPTION_ID=$(jq -r '.subscription.subscriptionId' input.json)
+          TENANT_ID=$(jq -r '.subscription.tenantId' input.json)
+          LOCATION=$(jq -r '.deployment.location' input.json)
+          SSH_KEY=$(jq -r '.virtualMachine.sshPublicKey' input.json)
 
-          echo "Selected deployment:"
-          echo "$JSON_CONTENT"
+          [[ "$APPROVED" == "true" ]] || { echo "Request is not marked approved in input.json"; exit 1; }
+          [[ "$ENVIRONMENT" == "dev" ]] || { echo "This workflow is currently restricted to dev."; exit 1; }
+          [[ "$SUBSCRIPTION_ID" == "efa057fe-e3b8-462a-98ba-08e0024d2442" ]] || { echo "Subscription ID does not match the approved BIFROST-SC subscription."; exit 1; }
+          [[ "$SSH_KEY" != "<SSH-PUBLIC-KEY>" && "$SSH_KEY" == ssh-* ]] || { echo "Set virtualMachine.sshPublicKey to a valid SSH public key before deploying."; exit 1; }
 
-          echo "matrix=$JSON_CONTENT" >> $GITHUB_OUTPUT
+          echo "subscription_id=$SUBSCRIPTION_ID" >> "$GITHUB_OUTPUT"
+          echo "tenant_id=$TENANT_ID" >> "$GITHUB_OUTPUT"
+          echo "location=$LOCATION" >> "$GITHUB_OUTPUT"
 
-  deploy:
-    needs: generate-matrix
+      - name: Install Bicep and build
+        uses: azure/cli@v2
+        with:
+          azcliversion: latest
+          inlineScript: |
+            az bicep install
+            az bicep build --file modules/main.bicep
+
+  what-if:
+    name: Azure What-If
+    needs: validate
     runs-on: ubuntu-latest
-
-    strategy:
-      fail-fast: false
-      matrix:
-        include: ${{ fromJson(needs.generate-matrix.outputs.matrix) }}
-
     steps:
-      - name: Checkout Repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Login to Azure
+      - name: Generate temporary Bicep parameters from input.json
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq -e . input.json >/dev/null
+          printf "using './modules/main.bicep'\nparam config = " > deployment.generated.bicepparam
+          jq -c . input.json >> deployment.generated.bicepparam
+          printf "\nparam deployPim = %s\n" "${{ inputs.deploy_pim }}" >> deployment.generated.bicepparam
+          chmod 600 deployment.generated.bicepparam
+
+      - name: Azure Login (OIDC)
         uses: azure/login@v2
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
-          tenant-id: ${{ vars.AZURE_TENANT_ID }}
-          subscription-id: ${{ matrix.sub_id }}
+          tenant-id: ${{ needs.validate.outputs.tenant_id }}
+          subscription-id: ${{ needs.validate.outputs.subscription_id }}
 
-      - name: Show Deployment Information
-        run: |
-          echo "Application : ${{ matrix.app_name }}"
-          echo "Environment : ${{ matrix.environment }}"
-          echo "Subscription : ${{ matrix.sub_id }}"
-          echo "Parameter File : ${{ matrix.param_file }}"
-
-      - name: What-If Deployment
+      - name: Verify logged-in subscription and tenant
         shell: bash
         run: |
-          ADMIN_PASSWORD="Aa1!$(openssl rand -base64 32 | tr -d '\n' | tr '/+' 'XY' | cut -c1-24)"
+          set -euo pipefail
+          ACTUAL_SUB=$(az account show --query id -o tsv)
+          ACTUAL_TENANT=$(az account show --query tenantId -o tsv)
+          [[ "$ACTUAL_SUB" == "${{ needs.validate.outputs.subscription_id }}" ]] || { echo "Azure login selected unexpected subscription"; exit 1; }
+          [[ "$ACTUAL_TENANT" == "${{ needs.validate.outputs.tenant_id }}" ]] || { echo "Azure login selected unexpected tenant"; exit 1; }
 
+      - name: Run What-If
+        shell: bash
+        run: |
+          set -euo pipefail
           az deployment sub what-if \
-            --location eastus \
+            --name "BIFROST-WhatIf-${{ github.run_number }}" \
+            --location "${{ needs.validate.outputs.location }}" \
             --template-file modules/main.bicep \
-            --parameters "${{ matrix.param_file }}" \
-            --parameters vmAdminPassword="$ADMIN_PASSWORD"
+            --parameters deployment.generated.bicepparam
 
-      - name: Deploy Bicep
+      - name: Cleanup generated parameters
+        if: always()
+        run: rm -f deployment.generated.bicepparam
+
+  deploy:
+    name: Deploy Azure resources
+    if: inputs.deploy_resources == true
+    needs: [validate, what-if]
+    runs-on: ubuntu-latest
+    environment: bifrost-dev
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Generate temporary Bicep parameters from input.json
         shell: bash
         run: |
-          ADMIN_PASSWORD="Aa1!$(openssl rand -base64 32 | tr -d '\n' | tr '/+' 'XY' | cut -c1-24)"
+          set -euo pipefail
+          printf "using './modules/main.bicep'\nparam config = " > deployment.generated.bicepparam
+          jq -c . input.json >> deployment.generated.bicepparam
+          printf "\nparam deployPim = %s\n" "${{ inputs.deploy_pim }}" >> deployment.generated.bicepparam
+          chmod 600 deployment.generated.bicepparam
 
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ needs.validate.outputs.tenant_id }}
+          subscription-id: ${{ needs.validate.outputs.subscription_id }}
+
+      - name: Deploy using the same configuration as What-If
+        shell: bash
+        run: |
+          set -euo pipefail
           az deployment sub create \
-            --location eastus \
+            --name "BIFROST-Deploy-${{ github.run_number }}" \
+            --location "${{ needs.validate.outputs.location }}" \
             --template-file modules/main.bicep \
-            --parameters "${{ matrix.param_file }}" \
-            --parameters vmAdminPassword="$ADMIN_PASSWORD"
+            --parameters deployment.generated.bicepparam
+
+      - name: Cleanup generated parameters
+        if: always()
+        run: rm -f deployment.generated.bicepparam
