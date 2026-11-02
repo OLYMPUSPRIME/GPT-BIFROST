@@ -200,8 +200,8 @@ jobs:
           az network vnet create --resource-group "${{ needs.validate.outputs.rg_name }}" --name "${{ needs.validate.outputs.vnet_name }}" --location "${{ needs.validate.outputs.location }}" --address-prefixes "${{ needs.validate.outputs.vnet_prefix }}" --subnet-name "${{ needs.validate.outputs.subnet_name }}" --subnet-prefixes "${{ needs.validate.outputs.subnet_prefix }}" --tags Project=BIFROST Environment=Dev DeploymentMethod=Bicep
           az network vnet subnet update --resource-group "${{ needs.validate.outputs.rg_name }}" --vnet-name "${{ needs.validate.outputs.vnet_name }}" --name "${{ needs.validate.outputs.subnet_name }}" --network-security-group "${{ needs.validate.outputs.nsg_name }}"
 
-  deploy-vm:
-    name: 07 - Public IP, NIC and Linux VM
+  deploy-public-ip:
+    name: 07 - Public IP
     needs: [validate, deploy-vnet]
     if: inputs.deploy_resources == true
     runs-on: ubuntu-latest
@@ -212,7 +212,37 @@ jobs:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ needs.validate.outputs.tenant_id }}
           subscription-id: ${{ needs.validate.outputs.subscription_id }}
-      - name: Deploy Linux VM from JSON values
+      - name: Create Standard static Public IP
+        run: az network public-ip create --resource-group "${{ needs.validate.outputs.rg_name }}" --name "${{ needs.validate.outputs.pip_name }}" --location "${{ needs.validate.outputs.location }}" --sku Standard --allocation-method Static --tags Project=BIFROST Environment=Dev DeploymentMethod=Bicep
+
+  deploy-nic:
+    name: 08 - Network Interface
+    needs: [validate, deploy-public-ip]
+    if: inputs.deploy_resources == true
+    runs-on: ubuntu-latest
+    environment: bifrost-dev
+    steps:
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ needs.validate.outputs.tenant_id }}
+          subscription-id: ${{ needs.validate.outputs.subscription_id }}
+      - name: Create NIC
+        run: az network nic create --resource-group "${{ needs.validate.outputs.rg_name }}" --name "${{ needs.validate.outputs.nic_name }}" --location "${{ needs.validate.outputs.location }}" --vnet-name "${{ needs.validate.outputs.vnet_name }}" --subnet "${{ needs.validate.outputs.subnet_name }}" --network-security-group "${{ needs.validate.outputs.nsg_name }}" --public-ip-address "${{ needs.validate.outputs.pip_name }}" --tags Project=BIFROST Environment=Dev DeploymentMethod=Bicep
+
+  deploy-vm:
+    name: 09 - Linux Virtual Machine
+    needs: [validate, deploy-nic]
+    if: inputs.deploy_resources == true
+    runs-on: ubuntu-latest
+    environment: bifrost-dev
+    steps:
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ needs.validate.outputs.tenant_id }}
+          subscription-id: ${{ needs.validate.outputs.subscription_id }}
+      - name: Deploy Linux VM
         shell: bash
         run: |
           set -euo pipefail
@@ -224,11 +254,7 @@ jobs:
             --size "${{ needs.validate.outputs.vm_size }}" \
             --admin-username "${{ needs.validate.outputs.admin_username }}" \
             --ssh-key-value "${{ needs.validate.outputs.ssh_key }}" \
-            --vnet-name "${{ needs.validate.outputs.vnet_name }}" \
-            --subnet "${{ needs.validate.outputs.subnet_name }}" \
             --nics "${{ needs.validate.outputs.nic_name }}" \
-            --public-ip-address "${{ needs.validate.outputs.pip_name }}" \
-            --public-ip-sku Standard \
             --os-disk-name "${{ needs.validate.outputs.osdisk_name }}" \
             --os-disk-size-gb "${{ needs.validate.outputs.osdisk_size }}" \
             --storage-sku "${{ needs.validate.outputs.osdisk_type }}" \
@@ -254,7 +280,7 @@ jobs:
 
   summary:
     name: 09 - Deployment summary
-    needs: [validate, deploy-resource-group, deploy-nsg, deploy-vnet, deploy-vm]
+    needs: [validate, deploy-resource-group, deploy-nsg, deploy-vnet, deploy-public-ip, deploy-nic, deploy-vm]
     if: always() && inputs.deploy_resources == true
     runs-on: ubuntu-latest
     steps:
