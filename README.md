@@ -64,7 +64,7 @@ The workflow is **manual-only** using `workflow_dispatch`; it does not deploy au
 - `deploy_resources=true`: deploys after the What-If job succeeds.
 - `deploy_pim=true`: includes PIM eligibility in the deployment. This is separately opt-in and requires privileged authorization.
 
-Configure GitHub repository variables `AZURE_CLIENT_ID` and `AZURE_TENANT_ID`. Configure the `bifrost-dev` GitHub environment with required reviewers if an approval gate is desired.
+Configure `AZURE_CLIENT_ID` and `AZURE_TENANT_ID` as variables in the GitHub Environment `bifrost-env` (or at repository level if intentionally shared). Jobs that need environment-scoped variables must declare `environment: bifrost-env`. Configure required reviewers in this environment if an approval gate is desired.
 
 ---
 
@@ -365,7 +365,7 @@ Before deployment, verify:
 
 1. The Azure subscription exists and is the intended target.
 2. An Entra application/service principal is configured for GitHub OIDC federation.
-3. GitHub Actions variables `AZURE_CLIENT_ID` and `AZURE_TENANT_ID` are configured; the tenant variable must match `input.json`.
+3. GitHub Environment `bifrost-env` is configured with Actions variables `AZURE_CLIENT_ID` and `AZURE_TENANT_ID`. The tenant ID is read from this environment variable; it is no longer stored in `input.json`.
 4. The federated credential trusts the correct repository and branch/environment.
 5. The deployment identity has required permissions. PIM eligibility and role assignment operations require specific authorization beyond ordinary Contributor.
 6. Parameter files match the Bicep template parameters.
@@ -379,9 +379,9 @@ Before deployment, verify:
 
 - Replace `virtualMachine.sshPublicKey` with your **public** SSH key (never paste the private key).
 - Replace `virtualMachine.network.sshAllowedSourceAddressPrefix` with your current public IP in host CIDR format, e.g. `203.0.113.10/32`. This example IP is documentation-only.
-- Verify the subscription ID and tenant ID in `input.json`.
+- Verify the subscription ID in `input.json`; tenant ID is sourced from the GitHub Actions variable `AZURE_TENANT_ID`.
 - Confirm the Azure app's federated credential trusts the repository and selected branch.
-- Confirm the GitHub variables `AZURE_CLIENT_ID` and `AZURE_TENANT_ID` are configured.
+- Confirm the GitHub Environment `bifrost-env` has `AZURE_CLIENT_ID` and `AZURE_TENANT_ID` configured, and relevant jobs declare `environment: bifrost-env`.
 - Confirm the deployment identity has permissions to create the RG, VNet, NSG, public IP, NIC, and VM. PIM requires additional privileged authorization.
 
 ### Run from GitHub UI
@@ -392,7 +392,7 @@ Before deployment, verify:
 4. Select **Run workflow** and review the What-If output.
 5. If approved, run again with `deploy_resources` checked.
 6. Select `deploy_pim` only when you intentionally want to create PIM eligibility and have the required permissions.
-7. Review the GitHub `bifrost-dev` environment approval (if configured) and Azure deployment status.
+7. Review the GitHub `bifrost-env` environment approval (if configured) and Azure deployment status.
 
 The deployment region is taken from `input.json` (currently `centralindia`). This workflow is currently restricted to BIFROST-SC and `dev`; it does not use the old subscription matrix or `environments/dev.bicepparam`.
 
