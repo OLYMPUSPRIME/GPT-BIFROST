@@ -19,7 +19,7 @@ module resourceGroupModule 'resource-group/resource-group.bicep' = {
 
 module nsgModule 'networking/nsg.bicep' = {
   name: 'bifrost-nsg-${uniqueString(rg.name, vmNetwork.networkSecurityGroupName)}'
-  scope: resourceGroup(resourceGroupModule.outputs.resourceGroupName)
+  scope: resourceGroup(rg.name)
   dependsOn: [ resourceGroupModule ]
   params: {
     location: location
@@ -31,7 +31,7 @@ module nsgModule 'networking/nsg.bicep' = {
 
 module vnetModule 'networking/vnet.bicep' = {
   name: 'bifrost-vnet-${uniqueString(rg.name, vmNetwork.virtualNetworkName)}'
-  scope: resourceGroup(resourceGroupModule.outputs.resourceGroupName)
+  scope: resourceGroup(rg.name)
   dependsOn: [ nsgModule ]
   params: {
     location: location
@@ -44,7 +44,7 @@ module vnetModule 'networking/vnet.bicep' = {
 
 module vmModule 'compute/vm-linux.bicep' = {
   name: 'bifrost-vm-${uniqueString(rg.name, vmConfig.name)}'
-  scope: resourceGroup(resourceGroupModule.outputs.resourceGroupName)
+  scope: resourceGroup(rg.name)
   dependsOn: [ vnetModule, nsgModule ]
   params: {
     location: vmConfig.location
@@ -67,7 +67,7 @@ module vmModule 'compute/vm-linux.bicep' = {
 
 module pimModule 'pim/pim.bicep' = if (deployPim && config.pim.enabled) {
   name: 'bifrost-pim-${uniqueString(rg.name, config.pim.principal.principalId, config.pim.role.roleDefinitionId)}'
-  scope: resourceGroup(resourceGroupModule.outputs.resourceGroupName)
+  scope: resourceGroup(rg.name)
   dependsOn: [ resourceGroupModule ]
   params: {
     principalId: config.pim.principal.principalId
