@@ -59,7 +59,20 @@
         "allocationMethod": "Static",
         "sku": "Standard"
       },
-      "sshAllowedSourceAddressPrefix": "134.238.17.18/32"
+      "sshAllowedSourceAddressPrefix": "134.238.17.18/32",
+      "securityRules": [
+        {
+          "name": "AllowSSHFromApprovedSource",
+          "priority": 100,
+          "direction": "Inbound",
+          "access": "Allow",
+          "protocol": "Tcp",
+          "sourcePortRange": "*",
+          "destinationPortRange": "22",
+          "sourceAddressPrefix": "134.238.17.18/32",
+          "destinationAddressPrefix": "*"
+        }
+      ]
     },
     "tags": {
       "Project": "BIFROST",
