@@ -60,7 +60,7 @@
         "allocationMethod": "Static",
         "sku": "Standard"
       },
-      "sshAllowedSourceAddressPrefix": "<YOUR-PUBLIC-IP>/32"
+      "sshAllowedSourceAddressPrefix": "134.238.17.18/32"
     },
     "tags": {
       "Project": "BIFROST",
