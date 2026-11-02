@@ -1,7 +1,7 @@
 {
   "request": {
     "ticketId": "PIKE-12345",
-    "requestedBy": "user@company.com",
+    "requestedBy": "kureti.venkat.nishit@gmail.com",
     "approved": true,
     "environment": "dev",
     "deploymentMethod": "Bicep",
@@ -9,8 +9,8 @@
   },
   "subscription": {
     "name": "BIFROST-SC",
-    "subscriptionId": "<BIFROST-SC-SUBSCRIPTION-ID>",
-    "tenantId": "<AZURE-TENANT-ID>"
+    "subscriptionId": "efa057fe-e3b8-462a-98ba-08e0024d2442",
+    "tenantId": "9fb47150-ef18-4438-b344-eac0dc7f55a1"
   },
   "deployment": {
     "location": "centralindia"
@@ -73,12 +73,12 @@
     "enabled": true,
     "assignmentType": "Eligibility",
     "principal": {
-      "principalId": "<USER-OR-GROUP-OBJECT-ID>",
+      "principalId": "f96ea3bd-b3ab-433a-ab58-e8c809969f96",
       "principalType": "User"
     },
     "role": {
       "roleName": "Contributor",
-      "roleDefinitionId": "<CONTRIBUTOR-ROLE-DEFINITION-ID>"
+      "roleDefinitionId": "b24988ac-6180-42a0-ab88-20f7382dd24c"
     },
     "scope": {
       "type": "ResourceGroup",
