@@ -3,14 +3,6 @@ targetScope = 'resourceGroup'
 @description('Microsoft Entra Object ID of the eligible principal.')
 param principalId string
 
-@description('Principal type: User, Group, or ServicePrincipal.')
-@allowed([
-  'User'
-  'Group'
-  'ServicePrincipal'
-])
-param principalType string = 'User'
-
 @description('Full subscription-scoped role definition resource ID.')
 param roleDefinitionId string
 
@@ -26,14 +18,23 @@ param startDateTime string = utcNow('yyyy-MM-ddTHH:mm:ssZ')
 @description('Deterministic schedule request GUID.')
 param requestName string
 
+@description('Jira ticket number for this eligibility request.')
+param ticketNumber string = ''
+
+@description('Ticket system name.')
+param ticketSystem string = 'Jira'
+
 resource eligibleAssignment 'Microsoft.Authorization/roleEligibilityScheduleRequests@2022-04-01-preview' = {
   name: requestName
   properties: {
     principalId: principalId
-    principalType: principalType
     roleDefinitionId: roleDefinitionId
     requestType: 'AdminAssign'
     justification: justification
+    ticketInfo: {
+      ticketNumber: ticketNumber
+      ticketSystem: ticketSystem
+    }
     scheduleInfo: {
       startDateTime: startDateTime
       expiration: {
