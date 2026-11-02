@@ -1,0 +1,98 @@
+{
+  "request": {
+    "ticketId": "PIKE-12345",
+    "requestedBy": "user@company.com",
+    "approved": true,
+    "environment": "dev",
+    "deploymentMethod": "Bicep",
+    "project": "BIFROST"
+  },
+  "subscription": {
+    "name": "BIFROST-SC",
+    "subscriptionId": "<BIFROST-SC-SUBSCRIPTION-ID>",
+    "tenantId": "<AZURE-TENANT-ID>"
+  },
+  "deployment": {
+    "location": "centralindia"
+  },
+  "resourceGroup": {
+    "name": "BIFROSTDEV001",
+    "location": "centralindia",
+    "tags": {
+      "Project": "BIFROST",
+      "Environment": "Dev",
+      "TicketId": "PIKE-12345",
+      "DeploymentMethod": "Bicep",
+      "ManagedBy": "GitHubActions"
+    }
+  },
+  "virtualMachine": {
+    "name": "BIFROSTDEVVM001",
+    "location": "centralindia",
+    "resourceGroupName": "BIFROSTDEV001",
+    "vmSize": "Standard_B2s",
+    "osType": "Linux",
+    "adminUsername": "azureuser",
+    "adminPasswordSecretName": "BIFROST-VM-ADMIN-PASSWORD",
+    "authenticationType": "SSH",
+    "sshPublicKey": "<SSH-PUBLIC-KEY>",
+    "image": {
+      "publisher": "Canonical",
+      "offer": "ubuntu-24_04-lts",
+      "sku": "server",
+      "version": "latest"
+    },
+    "osDisk": {
+      "name": "BIFROSTDEVVM001OSDisk",
+      "diskSizeGB": 30,
+      "storageAccountType": "StandardSSD_LRS",
+      "caching": "ReadWrite"
+    },
+    "network": {
+      "virtualNetworkName": "BIFROSTDEVVNET001",
+      "addressPrefix": "10.10.0.0/16",
+      "subnetName": "BIFROSTDEVSubnet001",
+      "subnetPrefix": "10.10.1.0/24",
+      "networkSecurityGroupName": "BIFROSTDEVNSG001",
+      "networkInterfaceName": "BIFROSTDEVNIC001",
+      "publicIp": {
+        "create": true,
+        "name": "BIFROSTDEVVM001PIP",
+        "allocationMethod": "Static",
+        "sku": "Standard"
+      }
+    },
+    "tags": {
+      "Project": "BIFROST",
+      "Environment": "Dev",
+      "TicketId": "PIKE-12345",
+      "DeploymentMethod": "Bicep"
+    }
+  },
+  "pim": {
+    "enabled": true,
+    "assignmentType": "Eligibility",
+    "principal": {
+      "principalId": "<USER-OR-GROUP-OBJECT-ID>",
+      "principalType": "User"
+    },
+    "role": {
+      "roleName": "Contributor",
+      "roleDefinitionId": "<CONTRIBUTOR-ROLE-DEFINITION-ID>"
+    },
+    "scope": {
+      "type": "ResourceGroup",
+      "resourceGroupName": "BIFROSTDEV001"
+    },
+    "schedule": {
+      "duration": "P90D",
+      "startDateTime": null,
+      "expirationType": "AfterDuration"
+    },
+    "justification": "Access required for BIFROST infrastructure deployment and support.",
+    "ticketInfo": {
+      "ticketSystem": "Jira",
+      "ticketNumber": "PIKE-12345"
+    }
+  }
+}
