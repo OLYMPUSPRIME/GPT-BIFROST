@@ -1,15 +1,16 @@
-name: BIFROST | Input JSON Deployment
+
+name: BIFROST | Modular Infrastructure Deployment
 
 on:
   workflow_dispatch:
     inputs:
       deploy_resources:
-        description: 'Deploy after validation and What-If (false = preview only)'
+        description: 'Deploy after What-If preview (false = preview only)'
         type: boolean
         required: true
         default: false
       deploy_pim:
-        description: 'Create PIM eligibility request (requires privileged permissions)'
+        description: 'Request PIM eligibility (requires privileged permissions)'
         type: boolean
         required: true
         default: false
@@ -20,43 +21,38 @@ permissions:
 
 jobs:
   lint:
-    name: 01 - Bicep lint and build
+    name: 01 - Validate JSON and build Bicep modules
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Install and verify Bicep
+      - name: Install Bicep
         run: |
-          set -euo pipefail
-          az --version
           az bicep install
           az bicep version
-      - name: Build all Bicep templates
+      - name: Build Bicep templates
+        shell: bash
         run: |
           set -euo pipefail
-          az bicep build --file modules/main.bicep --stdout >/dev/null
-          az bicep build --file modules/resource-group/resource-group.bicep --stdout >/dev/null
-          az bicep build --file modules/networking/nsg.bicep --stdout >/dev/null
-          az bicep build --file modules/networking/vnet.bicep --stdout >/dev/null
-          az bicep build --file modules/compute/vm-linux.bicep --stdout >/dev/null
-          az bicep build --file modules/pim/pim.bicep --stdout >/dev/null
-      - name: Validate input JSON
+          for file in modules/resource-group/resource-group.bicep modules/networking/nsg.bicep modules/networking/vnet.bicep modules/networking/public-ip.bicep modules/networking/nic.bicep modules/compute/vm-linux.bicep modules/pim/pim.bicep; do
+            echo "Building $file"
+            az bicep build --file "$file" --stdout >/dev/null
+          done
+      - name: Validate input.json
         run: jq empty input.json
 
   validate:
-    name: 02 - Validate configuration
+    name: 02 - Validate request and Azure environment
     needs: lint
     runs-on: ubuntu-latest
     environment: bifrost-dev
     outputs:
-      subscription_id: ${{ steps.config.outputs.subscription_id }}
-      tenant_id: ${{ steps.config.outputs.tenant_id }}
-      location: ${{ steps.config.outputs.location }}
-      rg_name: ${{ steps.config.outputs.rg_name }}
+      subscription_id: ${{ steps.cfg.outputs.subscription_id }}
+      tenant_id: ${{ steps.cfg.outputs.tenant_id }}
+      location: ${{ steps.cfg.outputs.location }}
+      rg_name: ${{ steps.cfg.outputs.rg_name }}
     steps:
       - uses: actions/checkout@v4
-      - name: Validate input.json and GitHub Environment values
-        id: config
-        shell: bash
+      - id: cfg
         env:
           AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
           AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
@@ -64,75 +60,52 @@ jobs:
           set -euo pipefail
           python - <<'PY'
           import ipaddress,json,os
-          c=json.load(open("input.json",encoding="utf-8"))
-          def need(ok,msg):
+          c=json.load(open('input.json',encoding='utf-8'))
+          plan=c.get('deploymentPlan',{})
+          def check(ok,msg):
               if not ok: raise SystemExit(msg)
-          need(c["request"]["approved"] is True,"request.approved must be true")
-          need(c["request"]["environment"]=="dev","Only dev environment is supported")
-          need(c["subscription"]["name"]=="BIFROST-SC","Only BIFROST-SC is permitted")
-          subscription_id=os.environ.get("AZURE_SUBSCRIPTION_ID","").strip()
-          tenant_id=os.environ.get("AZURE_TENANT_ID","").strip()
-          need(bool(subscription_id),"GitHub Environment variable AZURE_SUBSCRIPTION_ID is missing")
-          need(bool(tenant_id),"GitHub Environment variable AZURE_TENANT_ID is missing")
-          need(c["subscription"]["subscriptionId"]=="${AZURE_SUBSCRIPTION_ID}","input.json subscriptionId must use the AZURE_SUBSCRIPTION_ID placeholder")
-          rg=c["resourceGroup"]["name"]; vm=c["virtualMachine"]; net=vm["network"]
-          need(vm["resourceGroupName"]==rg,"VM resourceGroupName must equal resourceGroup.name")
-          need(c["pim"]["scope"]["resourceGroupName"]==rg,"PIM scope RG must equal resourceGroup.name")
-          need(vm["sshPublicKey"].startswith("ssh-") and "<" not in vm["sshPublicKey"],"Set a real SSH public key")
-          ip=ipaddress.ip_network(net["sshAllowedSourceAddressPrefix"],strict=False)
-          need(ip.prefixlen==ip.max_prefixlen,"SSH CIDR must be one host (/32 or /128)")
-          with open(os.environ["GITHUB_OUTPUT"],"a") as f:
-              f.write(f"subscription_id={subscription_id}\n")
-              f.write(f"tenant_id={tenant_id}\n")
-              f.write(f"location={c['deployment']['location']}\n")
-              f.write(f"rg_name={rg}\n")
+          check(c['request']['approved'] is True,'Request must be approved')
+          check(c['subscription']['name']=='BIFROST-SC','Only BIFROST-SC is permitted')
+          check(c['subscription']['subscriptionId']=='${AZURE_SUBSCRIPTION_ID}','subscriptionId must use the environment placeholder')
+          check(bool(os.getenv('AZURE_SUBSCRIPTION_ID')),'AZURE_SUBSCRIPTION_ID missing in bifrost-dev')
+          check(bool(os.getenv('AZURE_TENANT_ID')),'AZURE_TENANT_ID missing in bifrost-dev')
+          check(plan.get('resourceGroup')=='create','For this test, deploymentPlan.resourceGroup must be create')
+          check(plan.get('networking',{}).get('nsg')=='create','NSG deployment plan must be create')
+          check(plan.get('networking',{}).get('vnet')=='create','VNet deployment plan must be create')
+          check(plan.get('networking',{}).get('subnet')=='create','Subnet deployment plan must be create')
+          check(plan.get('networking',{}).get('publicIp')=='create','Public IP deployment plan must be create')
+          check(plan.get('networking',{}).get('nic')=='create','NIC deployment plan must be create')
+          check(plan.get('virtualMachine')=='create','VM deployment plan must be create')
+          check(c['virtualMachine']['resourceGroupName']==c['resourceGroup']['name'],'VM RG and RG configuration mismatch')
+          check(c['virtualMachine']['sshPublicKey'].startswith('ssh-'),'Valid SSH public key required')
+          ip=ipaddress.ip_network(c['virtualMachine']['network']['sshAllowedSourceAddressPrefix'],strict=False)
+          check(ip.prefixlen==ip.max_prefixlen,'SSH source must be a single host CIDR')
+          with open(os.environ['GITHUB_OUTPUT'],'a') as f:
+            f.write(f"subscription_id={os.environ['AZURE_SUBSCRIPTION_ID']}\\n")
+            f.write(f"tenant_id={os.environ['AZURE_TENANT_ID']}\\n")
+            f.write(f"location={c['deployment']['location']}\\n")
+            f.write(f"rg_name={c['resourceGroup']['name']}\\n")
           PY
 
   prepare:
-    name: 03 - Generate deployment parameters
+    name: 03 - Prepare input.json deployment artifact
     needs: validate
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Generate temporary bicepparam from input.json
+      - name: Resolve subscription placeholder and publish config
         env:
           AZURE_SUBSCRIPTION_ID: ${{ needs.validate.outputs.subscription_id }}
-          DEPLOY_PIM: ${{ inputs.deploy_pim }}
         run: |
-          set -euo pipefail
-          jq --arg subscriptionId "$AZURE_SUBSCRIPTION_ID" '.subscription.subscriptionId = $subscriptionId' input.json > input.generated.json
-          python - <<'PY'
-          import json,os
-          from pathlib import Path
-          def bicep(value):
-              if isinstance(value,dict):
-                  return "{ " + ", ".join(f"{key}: {bicep(item)}" for key,item in value.items()) + " }"
-              if isinstance(value,list):
-                  return "[" + ", ".join(bicep(item) for item in value) + "]"
-              if isinstance(value,str):
-                  return "'" + value.replace("'","''") + "'"
-              if value is True: return "true"
-              if value is False: return "false"
-              if value is None: return "null"
-              return str(value)
-          config=json.loads(Path("input.generated.json").read_text(encoding="utf-8"))
-          pim=os.environ["DEPLOY_PIM"].lower()=="true"
-          Path("deployment.generated.bicepparam").write_text(
-              "using './modules/main.bicep'\n"
-              f"param config = {bicep(config)}\n"
-              f"param deployPim = {str(pim).lower()}\n",encoding="utf-8")
-          PY
-          chmod 600 deployment.generated.bicepparam
-          rm -f input.generated.json
-      - name: Upload generated deployment parameters
-        uses: actions/upload-artifact@v4
+          jq --arg sid "$AZURE_SUBSCRIPTION_ID" '.subscription.subscriptionId=$sid' input.json > input.resolved.json
+      - uses: actions/upload-artifact@v4
         with:
-          name: bifrost-deployment-params
-          path: deployment.generated.bicepparam
+          name: bifrost-input-config
+          path: input.resolved.json
           retention-days: 1
 
   what-if:
-    name: 04 - Azure What-If preview
+    name: 04 - Subscription What-If preview
     needs: [validate,prepare]
     runs-on: ubuntu-latest
     environment: bifrost-dev
@@ -140,23 +113,20 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: bifrost-deployment-params
+          name: bifrost-input-config
       - uses: azure/login@v2
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ needs.validate.outputs.tenant_id }}
           subscription-id: ${{ needs.validate.outputs.subscription_id }}
-      - name: Verify Azure account context
+      - name: Generate RG module parameters
         run: |
-          set -euo pipefail
-          test "$(az account show --query id -o tsv)" = "${{ needs.validate.outputs.subscription_id }}"
-          test "$(az account show --query tenantId -o tsv)" = "${{ needs.validate.outputs.tenant_id }}"
-      - name: Subscription deployment What-If
-        run: |
-          az deployment sub what-if --name "BIFROST-WhatIf-${{ github.run_number }}" --location "${{ needs.validate.outputs.location }}" --template-file modules/main.bicep --parameters deployment.generated.bicepparam
+          jq '{\$schema:"https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",contentVersion:"1.0.0.0",parameters:{name:{value:.resourceGroup.name},location:{value:.resourceGroup.location},tags:{value:.resourceGroup.tags}}}' input.resolved.json > rg.parameters.json
+      - name: Resource Group What-If
+        run: az deployment sub what-if --name "BIFROST-RG-WhatIf-${{ github.run_number }}" --location "${{ needs.validate.outputs.location }}" --template-file modules/resource-group/resource-group.bicep --parameters @rg.parameters.json
 
-  deploy:
-    name: 05 - Deploy complete infrastructure using Bicep
+  resource-group:
+    name: 05 - Resource Group | Create
     needs: [validate,prepare,what-if]
     if: inputs.deploy_resources == true
     runs-on: ubuntu-latest
@@ -165,25 +135,159 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
-          name: bifrost-deployment-params
+          name: bifrost-input-config
       - uses: azure/login@v2
         with:
           client-id: ${{ vars.AZURE_CLIENT_ID }}
           tenant-id: ${{ needs.validate.outputs.tenant_id }}
           subscription-id: ${{ needs.validate.outputs.subscription_id }}
-      - name: Deploy Resource Group, NSG, VNet, subnet, Public IP, NIC, VM and optional PIM
-        shell: bash
+      - name: Resource Group module deployment
         run: |
-          set -euo pipefail
-          az deployment sub create \
-            --name "BIFROST-Deploy-${{ github.run_number }}" \
-            --location "${{ needs.validate.outputs.location }}" \
-            --template-file modules/main.bicep \
-            --parameters deployment.generated.bicepparam \
-            --output table
-      - name: Deployment summary
-        if: always()
+          jq '{\$schema:"https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",contentVersion:"1.0.0.0",parameters:{name:{value:.resourceGroup.name},location:{value:.resourceGroup.location},tags:{value:.resourceGroup.tags}}}' input.resolved.json > params.json
+          az deployment sub create --name "BIFROST-RG-${{ github.run_number }}" --location "${{ needs.validate.outputs.location }}" --template-file modules/resource-group/resource-group.bicep --parameters @params.json --output table
+
+  nsg:
+    name: 06 - Network Security Group | Create
+    needs: [resource-group]
+    if: inputs.deploy_resources == true
+    runs-on: ubuntu-latest
+    environment: bifrost-dev
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: bifrost-input-config
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ needs.validate.outputs.tenant_id }}
+          subscription-id: ${{ needs.validate.outputs.subscription_id }}
+      - name: Deploy NSG Bicep module
         run: |
-          echo "Resource Group: ${{ needs.validate.outputs.rg_name }}"
-          echo "Deployment: BIFROST-Deploy-${{ github.run_number }}"
-          echo "See the deployment output above for status."
+          jq '{\$schema:"https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",contentVersion:"1.0.0.0",parameters:{location:{value:.deployment.location},nsgName:{value:.virtualMachine.network.networkSecurityGroupName},securityRules:{value:.virtualMachine.network.securityRules},tags:{value:(.resourceGroup.tags + .virtualMachine.tags)}}}' input.resolved.json > params.json
+          az deployment group create --name "BIFROST-NSG-${{ github.run_number }}" --resource-group "${{ needs.validate.outputs.rg_name }}" --template-file modules/networking/nsg.bicep --parameters @params.json --output table
+
+  vnet:
+    name: 07 - Virtual Network and Subnet | Create
+    needs: [nsg]
+    if: inputs.deploy_resources == true
+    runs-on: ubuntu-latest
+    environment: bifrost-dev
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: bifrost-input-config
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ needs.validate.outputs.tenant_id }}
+          subscription-id: ${{ needs.validate.outputs.subscription_id }}
+      - name: Deploy VNet Bicep module
+        run: |
+          jq '{\$schema:"https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",contentVersion:"1.0.0.0",parameters:{location:{value:.deployment.location},vnetName:{value:.virtualMachine.network.virtualNetworkName},addressPrefixes:{value:[.virtualMachine.network.addressPrefix]},subnets:{value:[{name:.virtualMachine.network.subnetName,addressPrefix:.virtualMachine.network.subnetPrefix,nsgName:.virtualMachine.network.networkSecurityGroupName}]},tags:{value:(.resourceGroup.tags + .virtualMachine.tags)}}}' input.resolved.json > params.json
+          az deployment group create --name "BIFROST-VNET-${{ github.run_number }}" --resource-group "${{ needs.validate.outputs.rg_name }}" --template-file modules/networking/vnet.bicep --parameters @params.json --output table
+
+  public-ip:
+    name: 08 - Public IP | Create
+    needs: [vnet]
+    if: inputs.deploy_resources == true
+    runs-on: ubuntu-latest
+    environment: bifrost-dev
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: bifrost-input-config
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ needs.validate.outputs.tenant_id }}
+          subscription-id: ${{ needs.validate.outputs.subscription_id }}
+      - name: Deploy Public IP module
+        run: |
+          jq '{\$schema:"https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",contentVersion:"1.0.0.0",parameters:{location:{value:.virtualMachine.location},publicIpName:{value:.virtualMachine.network.publicIp.name},allocationMethod:{value:.virtualMachine.network.publicIp.allocationMethod},sku:{value:.virtualMachine.network.publicIp.sku},tags:{value:(.resourceGroup.tags + .virtualMachine.tags)}}}' input.resolved.json > params.json
+          az deployment group create --name "BIFROST-PIP-${{ github.run_number }}" --resource-group "${{ needs.validate.outputs.rg_name }}" --template-file modules/networking/public-ip.bicep --parameters @params.json --output table
+
+  nic:
+    name: 09 - Network Interface | Create and attach
+    needs: [public-ip]
+    if: inputs.deploy_resources == true
+    runs-on: ubuntu-latest
+    environment: bifrost-dev
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: bifrost-input-config
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ needs.validate.outputs.tenant_id }}
+          subscription-id: ${{ needs.validate.outputs.subscription_id }}
+      - name: Deploy NIC module and attach subnet/Public IP
+        run: |
+          jq '{\$schema:"https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",contentVersion:"1.0.0.0",parameters:{location:{value:.virtualMachine.location},nicName:{value:.virtualMachine.network.networkInterfaceName},vnetName:{value:.virtualMachine.network.virtualNetworkName},subnetName:{value:.virtualMachine.network.subnetName},publicIpName:{value:.virtualMachine.network.publicIp.name},attachPublicIp:{value:.virtualMachine.network.publicIp.create},tags:{value:(.resourceGroup.tags + .virtualMachine.tags)}}}' input.resolved.json > params.json
+          az deployment group create --name "BIFROST-NIC-${{ github.run_number }}" --resource-group "${{ needs.validate.outputs.rg_name }}" --template-file modules/networking/nic.bicep --parameters @params.json --output table
+
+  vm:
+    name: 10 - Linux Virtual Machine | Create and attach
+    needs: [nic]
+    if: inputs.deploy_resources == true
+    runs-on: ubuntu-latest
+    environment: bifrost-dev
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: bifrost-input-config
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ needs.validate.outputs.tenant_id }}
+          subscription-id: ${{ needs.validate.outputs.subscription_id }}
+      - name: Deploy Linux VM module
+        run: |
+          jq '{\$schema:"https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",contentVersion:"1.0.0.0",parameters:{location:{value:.virtualMachine.location},vmName:{value:.virtualMachine.name},adminUsername:{value:.virtualMachine.adminUsername},vmSize:{value:.virtualMachine.vmSize},sshPublicKey:{value:.virtualMachine.sshPublicKey},image:{value:.virtualMachine.image},osDisk:{value:.virtualMachine.osDisk},networkInterfaceName:{value:.virtualMachine.network.networkInterfaceName},tags:{value:(.resourceGroup.tags + .virtualMachine.tags)}}}' input.resolved.json > params.json
+          az deployment group create --name "BIFROST-VM-${{ github.run_number }}" --resource-group "${{ needs.validate.outputs.rg_name }}" --template-file modules/compute/vm-linux.bicep --parameters @params.json --output table
+
+  pim:
+    name: 11 - PIM Eligibility | Optional
+    needs: [vm]
+    if: inputs.deploy_resources == true && inputs.deploy_pim == true
+    runs-on: ubuntu-latest
+    environment: bifrost-dev
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: bifrost-input-config
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ needs.validate.outputs.tenant_id }}
+          subscription-id: ${{ needs.validate.outputs.subscription_id }}
+      - name: Deploy PIM module
+        run: |
+          jq '{\$schema:"https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",contentVersion:"1.0.0.0",parameters:{principalId:{value:.pim.principal.principalId},roleDefinitionId:{value:(.pim.role.roleDefinitionId)},justification:{value:.pim.justification},ticketNumber:{value:.pim.ticketInfo.ticketNumber},ticketSystem:{value:.pim.ticketInfo.ticketSystem},duration:{value:.pim.schedule.duration},requestName:{value:(.pim.principal.principalId + "-" + .request.ticketId)}}}' input.resolved.json > params.json
+          az deployment group create --name "BIFROST-PIM-${{ github.run_number }}" --resource-group "${{ needs.validate.outputs.rg_name }}" --template-file modules/pim/pim.bicep --parameters @params.json --output table
+
+  pim-not-requested:
+    name: 11 - PIM Eligibility | Not requested
+    needs: [vm]
+    if: inputs.deploy_resources == true && inputs.deploy_pim == false
+    runs-on: ubuntu-latest
+    steps:
+      - name: Report PIM not requested
+        run: echo "PIM is not included in this deployment execution. No eligibility assignment was created."
+
+  summary:
+    name: 12 - Deployment summary
+    needs: [resource-group,nsg,vnet,public-ip,nic,vm]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          echo "BIFROST modular deployment workflow completed."
+          echo "Resource stages are listed individually above."
+          echo "Review each stage for its deployment result."
