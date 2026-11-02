@@ -341,3 +341,33 @@ Recommended implementation order:
 - [GitHub Actions deployment workflow](.github/workflows/deploy.yml)
 
 **Status:** BIFROST currently provides the core IaC deployment foundation. Jira intake, project assessment, cost/approval gates, mandatory tag enforcement, structured Jira result updates, requester notifications, and external monitoring integration remain additional work for full PIKE process alignment.
+
+
+## JSON-driven deployment using `input.json`
+
+The planned deployment approach uses the root `input.json` as the single source of resource configuration. GitHub Actions will parse and validate the JSON, then generate a temporary `.bicepparam` file with values mapped to the parameters expected by the selected Bicep template. The temporary parameter file is used for the What-If preview and deployment, then removed from the runner.
+
+> **Implementation note:** This is the target workflow design. The current `deploy.yml` still uses the existing `config/subscriptions.json` matrix and environment parameter-file path. The workflow and Bicep parameter schema must be updated before this diagram describes the actual automated behavior.
+
+```mermaid
+flowchart TD
+    A[Root input.json] --> B[GitHub Actions reads JSON]
+    B --> C[Validate required fields]
+    C --> D[Generate temporary .bicepparam]
+    D --> E[Azure Login using OIDC]
+    E --> F[Bicep What-If]
+    F --> G[Bicep Deployment]
+    G --> H[Cleanup temporary parameter file]
+```
+
+### Expected processing sequence
+
+1. Check out the repository and read root `input.json`.
+2. Validate the JSON syntax, required properties, approved values, and target subscription.
+3. Map the request data to the Bicep template's declared parameters and write a temporary parameter file on the GitHub Actions runner.
+4. Authenticate to Azure with OIDC.
+5. Run Bicep What-If using the generated parameters.
+6. Deploy using the **same generated parameter file** used for What-If.
+7. Remove the temporary file, including on failure (use an always-run cleanup step).
+
+The generated parameter file should not be committed or uploaded as an artifact if it contains sensitive values. Prefer GitHub Secrets, Azure Key Vault, or secure runtime parameters for secrets; never put passwords or client secrets in `input.json`.
