@@ -1,5 +1,4 @@
-name: BIFROST | PIM User Eligibility Assignment
-
+name: PIM Mark-1
 # This workflow is intentionally manual-only.
 # Run it from GitHub Actions -> select this workflow -> Run workflow.
 on:
