@@ -18,7 +18,7 @@ jobs:
   validate:
     name: 01 - Validate PIM request and build Bicep
     runs-on: ubuntu-latest
-    environment: bifrost-env
+    environment: bifrost-dev
     outputs:
       subscription_id: ${{ steps.config.outputs.subscription_id }}
       tenant_id: ${{ steps.config.outputs.tenant_id }}
@@ -48,7 +48,7 @@ jobs:
       - name: Validate input.json and prepare outputs
         id: config
         env:
-          # Read subscription and tenant IDs from the bifrost-env GitHub Environment variables.
+          # Read subscription and tenant IDs from the bifrost-dev GitHub Environment variables.
           AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
           AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
         shell: bash
@@ -122,7 +122,7 @@ jobs:
                   r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}",
                   sub
               ),
-              "Set valid AZURE_SUBSCRIPTION_ID in GitHub environment bifrost-env."
+              "Set valid AZURE_SUBSCRIPTION_ID in GitHub environment bifrost-dev."
           )
 
           # Validate that the tenant ID exists and follows GUID formatting.
@@ -132,7 +132,7 @@ jobs:
                   r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}",
                   tenant
               ),
-              "Set valid AZURE_TENANT_ID in GitHub environment bifrost-env."
+              "Set valid AZURE_TENANT_ID in GitHub environment bifrost-dev."
           )
 
           # Ensure PIM is enabled in the input configuration.
@@ -242,7 +242,7 @@ jobs:
     name: 02 - Preview or create PIM eligibility
     needs: validate
     runs-on: ubuntu-latest
-    environment: bifrost-env
+    environment: bifrost-dev
     steps:
       - uses: actions/checkout@v4
 
