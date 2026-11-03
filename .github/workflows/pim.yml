@@ -1,5 +1,7 @@
 name: BIFROST | PIM User Eligibility Assignment
 
+# This workflow is intentionally manual-only.
+# Run it from GitHub Actions -> select this workflow -> Run workflow.
 on:
   workflow_dispatch:
     inputs:
@@ -115,8 +117,10 @@ jobs:
                 ticketSystem:{value:.pim.ticketInfo.ticketSystem}
               }}' input.json > pim.parameters.json
 
+      # GitHub Actions inputs context is boolean. Explicit expression avoids
+      # accidental deployment when deploy_pim is omitted/false.
       - name: Run PIM What-If
-        if: inputs.deploy_pim == false
+        if: ${{ inputs.deploy_pim != true }}
         run: |
           az deployment sub what-if \
             --name "BIFROST-PIM-WhatIf-${{ github.run_number }}" \
@@ -125,7 +129,7 @@ jobs:
             --parameters @pim.parameters.json
 
       - name: Create PIM eligibility request
-        if: inputs.deploy_pim == true
+        if: ${{ inputs.deploy_pim == true }}
         run: |
           az deployment sub create \
             --name "BIFROST-PIM-${{ github.run_number }}" \
