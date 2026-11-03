@@ -33,7 +33,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for file in modules/resource-group/resource-group.bicep modules/networking/nsg.bicep modules/networking/vnet.bicep modules/networking/public-ip.bicep modules/networking/nic.bicep modules/compute/vm-linux.bicep modules/pim/pim.bicep modules/pim/main.bicep; do
+          for file in modules/resource-group/resource-group.bicep modules/networking/nsg.bicep modules/networking/vnet.bicep modules/networking/public-ip.bicep modules/networking/nic.bicep modules/compute/vm-linux.bicep modules/compute/vm-win.bicep modules/pim/pim.bicep modules/pim/main.bicep; do
             echo "Building $file"
             az bicep build --file "$file" --stdout >/dev/null
           done
@@ -76,6 +76,11 @@ jobs:
           check(plan.get('networking',{}).get('publicIp')=='create','Public IP deployment plan must be create')
           check(plan.get('networking',{}).get('nic')=='create','NIC deployment plan must be create')
           check(plan.get('virtualMachine')=='create','VM deployment plan must be create')
+          check(plan.get('windowsVirtualMachine')=='create','Windows VM deployment plan must be create')
+          windows=[v for v in c.get('virtualMachines',[]) if v.get('osType','').lower()=='windows']
+          check(len(windows)==1,'Exactly one Windows VM configuration is required for this workflow test')
+          check(len(windows[0]['name'])<=64,'Windows VM resource name must be 64 characters or fewer')
+          check(len(windows[0].get('computerName','BIFROSTWIN001'))<=15,'Windows computerName must be 15 characters or fewer')
           check(plan.get('pim')=='create','PIM deployment plan must be create for testing')
           check(c.get('pim',{}).get('scope',{}).get('type')=='ResourceGroup','PIM scope must be ResourceGroup for this module')
           check(c.get('pim',{}).get('scope',{}).get('resourceGroupName')==c['resourceGroup']['name'],'PIM scope resource group must match configured resource group')
@@ -254,8 +259,103 @@ jobs:
           jq '{"$schema":"https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",contentVersion:"1.0.0.0",parameters:{location:{value:.virtualMachine.location},vmName:{value:.virtualMachine.name},adminUsername:{value:.virtualMachine.adminUsername},vmSize:{value:.virtualMachine.vmSize},sshPublicKey:{value:.virtualMachine.sshPublicKey},image:{value:.virtualMachine.image},osDisk:{value:.virtualMachine.osDisk},networkInterfaceName:{value:.virtualMachine.network.networkInterfaceName},tags:{value:(.resourceGroup.tags + .virtualMachine.tags)}}}' input.resolved.json > params.json
           az deployment group create --name "BIFROST-VM-${{ github.run_number }}" --resource-group "${{ needs.validate.outputs.rg_name }}" --template-file modules/compute/vm-linux.bicep --parameters @params.json --output table
 
+  windows-public-ip:
+    name: 11 - Windows VM Public IP | Create
+    needs: [vnet,validate]
+    if: inputs.deploy_resources == true
+    runs-on: ubuntu-latest
+    environment: bifrost-dev
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: bifrost-input-config
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ needs.validate.outputs.tenant_id }}
+          subscription-id: ${{ needs.validate.outputs.subscription_id }}
+      - name: Deploy Windows Public IP module
+        run: |
+          jq '[.virtualMachines[] | select(.osType=="Windows")][0] as $w | {"$schema":"https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",contentVersion:"1.0.0.0",parameters:{location:{value:$w.location},publicIpName:{value:$w.network.publicIp.name},allocationMethod:{value:$w.network.publicIp.allocationMethod},sku:{value:$w.network.publicIp.sku},tags:{value:(.resourceGroup.tags + $w.tags)}}}' input.resolved.json > params.json
+          az deployment group create --name "BIFROST-WIN-PIP-${{ github.run_number }}" --resource-group "${{ needs.validate.outputs.rg_name }}" --template-file modules/networking/public-ip.bicep --parameters @params.json --output table
+
+  windows-nic:
+    name: 12 - Windows VM Network Interface | Create and attach
+    needs: [windows-public-ip,vnet,validate]
+    if: inputs.deploy_resources == true
+    runs-on: ubuntu-latest
+    environment: bifrost-dev
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: bifrost-input-config
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ needs.validate.outputs.tenant_id }}
+          subscription-id: ${{ needs.validate.outputs.subscription_id }}
+      - name: Deploy Windows NIC module and attach subnet/Public IP
+        run: |
+          jq '[.virtualMachines[] | select(.osType=="Windows")][0] as $w | {"$schema":"https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",contentVersion:"1.0.0.0",parameters:{location:{value:$w.location},nicName:{value:$w.network.networkInterfaceName},vnetName:{value:$w.network.virtualNetworkName},subnetName:{value:$w.network.subnetName},publicIpName:{value:$w.network.publicIp.name},attachPublicIp:{value:$w.network.publicIp.create},tags:{value:(.resourceGroup.tags + $w.tags)}}}' input.resolved.json > params.json
+          az deployment group create --name "BIFROST-WIN-NIC-${{ github.run_number }}" --resource-group "${{ needs.validate.outputs.rg_name }}" --template-file modules/networking/nic.bicep --parameters @params.json --output table
+
+  windows-vm:
+    name: 13 - Windows Virtual Machine | Create and attach
+    needs: [windows-nic,validate]
+    if: inputs.deploy_resources == true
+    runs-on: ubuntu-latest
+    environment: bifrost-dev
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: bifrost-input-config
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ needs.validate.outputs.tenant_id }}
+          subscription-id: ${{ needs.validate.outputs.subscription_id }}
+      - name: Generate secure Windows VM parameters
+        env:
+          WINDOWS_VM_ADMIN_PASSWORD: ${{ secrets.WINDOWS_VM_ADMIN_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os
+          c=json.load(open('input.resolved.json',encoding='utf-8'))
+          w=next(v for v in c['virtualMachines'] if v.get('osType','').lower()=='windows')
+          password=os.environ.get('WINDOWS_VM_ADMIN_PASSWORD','')
+          if not password:
+              raise SystemExit('WINDOWS_VM_ADMIN_PASSWORD secret is missing in GitHub Environment bifrost-dev.')
+          if len(password)<12:
+              raise SystemExit('Windows VM password must be at least 12 characters.')
+          params={
+            "$schema":"https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+            "contentVersion":"1.0.0.0",
+            "parameters":{
+              "location":{"value":w["location"]},
+              "vmName":{"value":w["name"]},
+              "computerName":{"value":w.get("computerName","BIFROSTWIN001")},
+              "adminUsername":{"value":w["adminUsername"]},
+              "adminPassword":{"value":password},
+              "vmSize":{"value":w["vmSize"]},
+              "image":{"value":w["image"]},
+              "osDisk":{"value":w["osDisk"]},
+              "networkInterfaceId":{"value":f"/subscriptions/{c['subscription']['subscriptionId']}/resourceGroups/{w['resourceGroupName']}/providers/Microsoft.Network/networkInterfaces/{w['network']['networkInterfaceName']}"},
+              "tags":{"value":c["resourceGroup"]["tags"] | w.get("tags",{})}
+            }
+          }
+          json.dump(params,open('windows-vm.parameters.json','w'),indent=2)
+          PY
+      - name: Deploy Windows VM Bicep module
+        run: |
+          az deployment group create --name "BIFROST-WIN-VM-${{ github.run_number }}" --resource-group "${{ needs.validate.outputs.rg_name }}" --template-file modules/compute/vm-win.bicep --parameters @windows-vm.parameters.json --output table
+
   pim:
-    name: 11 - PIM Eligibility | Optional
+    name: 14 - PIM Eligibility | Optional
     needs: [vm,validate]
     if: inputs.deploy_resources == true && inputs.deploy_pim == true
     runs-on: ubuntu-latest
@@ -298,9 +398,9 @@ jobs:
         run: az deployment group create --name "BIFROST-PIM-${{ github.run_number }}" --resource-group "${{ needs.validate.outputs.rg_name }}" --template-file modules/pim/main.bicep --parameters @params.json --output table
 
   pim-not-requested:
-    name: 11 - PIM Eligibility | Not requested
-    needs: [vm]
-    if: inputs.deploy_resources == true && inputs.deploy_pim == false
+    name: 14 - PIM Eligibility | Not requested
+    needs: [validate]
+    if: always() && inputs.deploy_pim == false
     runs-on: ubuntu-latest
     steps:
       - name: Report PIM not requested
@@ -308,7 +408,7 @@ jobs:
 
   summary:
     name: 12 - Deployment summary
-    needs: [resource-group,nsg,vnet,public-ip,nic,vm]
+    needs: [resource-group,nsg,vnet,public-ip,nic,vm,windows-public-ip,windows-nic,windows-vm,pim,pim-not-requested]
     if: always()
     runs-on: ubuntu-latest
     steps:
