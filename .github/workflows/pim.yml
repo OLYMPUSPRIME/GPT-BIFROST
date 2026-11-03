@@ -30,54 +30,212 @@ jobs:
 
       - name: Install Azure CLI and Bicep
         run: |
+          # Display the installed Azure CLI version.
           az version
+
+          # Install the Bicep CLI if it is not already installed.
           az bicep install
+
+          # Verify the installed Bicep CLI version.
           az bicep version
 
       - name: Build PIM Bicep module
-        run: az bicep build --file modules/pim/pim.bicep --stdout >/dev/null
+        run: |
+          # Compile the PIM Bicep module to check for syntax and compilation errors.
+          # Send generated ARM JSON to /dev/null because this step only validates the build.
+          az bicep build --file modules/pim/pim.bicep --stdout >/dev/null
 
       - name: Validate input.json and prepare outputs
         id: config
         env:
+          # Read subscription and tenant IDs from the bifrost-env GitHub Environment variables.
           AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
           AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
         shell: bash
         run: |
+          # Enable strict Bash execution:
+          # -e: Stop when a command fails.
+          # -u: Stop if an undefined variable is used.
+          # -o pipefail: Treat a pipeline as failed if any command in it fails.
           set -euo pipefail
+
+          # Validate input.json syntax without printing the JSON contents.
           jq empty input.json
+
+          # Run Python inline to validate the configuration and create
+          # GitHub Actions outputs for downstream workflow steps.
           python - <<'PY'
-          import json, os, re, uuid
-          c = json.load(open("input.json", encoding="utf-8"))
+
+          # Import the libraries used by this validation script.
+          import json       # Parse the input JSON configuration.
+          import os         # Read environment variables and GitHub output paths.
+          import re         # Validate GUIDs and other strings with regular expressions.
+          import uuid       # Generate a stable UUID for the PIM request.
+
+          # Open input.json and parse its contents into a Python dictionary.
+          with open("input.json", encoding="utf-8") as file:
+              c = json.load(file)
+
+          # Get the PIM configuration section from the input file.
           pim = c["pim"]
+
+          # Get the target user configuration.
           user = pim["user"]
+
+          # Get the role configuration for the eligibility assignment.
           role = pim["role"]
+
+          # Read the subscription ID configured in GitHub Environment variables.
           sub = os.environ.get("AZURE_SUBSCRIPTION_ID", "")
+
+          # Read the tenant ID configured in GitHub Environment variables.
           tenant = os.environ.get("AZURE_TENANT_ID", "")
+
+          # Read the target user's Entra ID Object ID.
+          # This must be a GUID, not the user's alias or display name.
           principal = user["principalId"]
+
+          # Define a reusable assertion function.
+          # If the condition is false, stop the script and display the error message.
           def require(condition, message):
               if not condition:
                   raise SystemExit(message)
-          require(c["request"]["approved"] is True, "Request must be approved in input.json.")
-          require(c["subscription"]["name"] == "BIFROST-SC", "Only BIFROST-SC is allowed for this branch.")
-          require(sub and re.fullmatch(r"[0-9a-fA-F-]{36}", sub), "Set valid AZURE_SUBSCRIPTION_ID in GitHub environment bifrost-env.")
-          require(tenant and re.fullmatch(r"[0-9a-fA-F-]{36}", tenant), "Set valid AZURE_TENANT_ID in GitHub environment bifrost-env.")
-          require(pim["enabled"] is True, "pim.enabled must be true.")
-          require(pim["assignmentType"] == "Eligibility", "This workflow only supports PIM eligibility.")
-          require(user["alias"] == "pim_user_1", "Expected user alias pim_user_1.")
-          require(user["principalType"] == "User", "This workflow only supports User principals.")
-          require(re.fullmatch(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", principal), "Replace principalId with pim_user_1's Entra Object ID (GUID).")
-          require(re.fullmatch(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", role["roleDefinitionId"]), "roleDefinitionId must be a role GUID.")
-          require(pim["scope"]["type"] == "Subscription", "PIM scope must be Subscription.")
-          require(pim["schedule"]["expirationType"] == "AfterDuration", "Only AfterDuration is supported.")
-          require(pim["schedule"]["duration"].startswith("P"), "Use an ISO 8601 duration such as P90D.")
-          request = str(uuid.uuid5(uuid.NAMESPACE_URL, sub + principal + role["roleDefinitionId"] + pim["ticketInfo"]["ticketNumber"]))
-          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+
+          # Confirm that the request is marked as approved in input.json.
+          require(
+              c["request"]["approved"] is True,
+              "Request must be approved in input.json."
+          )
+
+          # Restrict this branch/workflow to the expected subscription name.
+          # This guard helps prevent accidental deployment to another subscription.
+          require(
+              c["subscription"]["name"] == "BIFROST-SC",
+              "Only BIFROST-SC is allowed for this branch."
+          )
+
+          # Validate that the subscription ID exists and follows GUID formatting.
+          # The strict regex checks the GUID's hyphen positions and hexadecimal characters.
+          require(
+              sub and re.fullmatch(
+                  r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+                  r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}",
+                  sub
+              ),
+              "Set valid AZURE_SUBSCRIPTION_ID in GitHub environment bifrost-env."
+          )
+
+          # Validate that the tenant ID exists and follows GUID formatting.
+          require(
+              tenant and re.fullmatch(
+                  r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+                  r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}",
+                  tenant
+              ),
+              "Set valid AZURE_TENANT_ID in GitHub environment bifrost-env."
+          )
+
+          # Ensure PIM is enabled in the input configuration.
+          require(
+              pim["enabled"] is True,
+              "pim.enabled must be true."
+          )
+
+          # This pipeline creates eligible assignments only, not active assignments.
+          require(
+              pim["assignmentType"] == "Eligibility",
+              "This workflow only supports PIM eligibility."
+          )
+
+          # Verify that the configured user alias is the expected test alias.
+          # The alias is only a configuration label; principalId identifies the actual user.
+          require(
+              user["alias"] == "pim_user_1",
+              "Expected user alias pim_user_1."
+          )
+
+          # Restrict this implementation to Entra ID user principals.
+          # Group and service-principal assignments are not handled by this workflow.
+          require(
+              user["principalType"] == "User",
+              "This workflow only supports User principals."
+          )
+
+          # Validate the target user's Entra Object ID as a GUID.
+          # Replace the placeholder in input.json with the actual user's Object ID.
+          require(
+              re.fullmatch(
+                  r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+                  r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}",
+                  principal
+              ),
+              "Replace principalId with pim_user_1's Entra Object ID (GUID)."
+          )
+
+          # Validate the Azure role definition ID as a GUID.
+          # This should be the GUID of the Azure built-in or custom role.
+          require(
+              re.fullmatch(
+                  r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+                  r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}",
+                  role["roleDefinitionId"]
+              ),
+              "roleDefinitionId must be a role GUID."
+          )
+
+          # Restrict the assignment scope to the subscription.
+          # This implementation does not currently support resource-group or resource scope.
+          require(
+              pim["scope"]["type"] == "Subscription",
+              "PIM scope must be Subscription."
+          )
+
+          # Confirm that the eligibility assignment expires after a defined duration.
+          require(
+              pim["schedule"]["expirationType"] == "AfterDuration",
+              "Only AfterDuration is supported."
+          )
+
+          # Perform a basic ISO 8601 duration check.
+          # Example: P90D represents a period of 90 days.
+          require(
+              pim["schedule"]["duration"].startswith("P"),
+              "Use an ISO 8601 duration such as P90D."
+          )
+
+          # Create a deterministic UUID from subscription, user, role, and ticket number.
+          # UUID5 returns the same UUID when the same input string is used.
+          # This makes the request name stable across repeated runs for the same request.
+          request = str(
+              uuid.uuid5(
+                  uuid.NAMESPACE_URL,
+                  sub
+                  + principal
+                  + role["roleDefinitionId"]
+                  + pim["ticketInfo"]["ticketNumber"]
+              )
+          )
+
+          # Append values to GitHub Actions' special output file.
+          # Values written here become outputs of this step for downstream jobs/steps.
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
+
+              # Export the Azure subscription ID.
               f.write(f"subscription_id={sub}\n")
+
+              # Export the Azure tenant ID.
               f.write(f"tenant_id={tenant}\n")
+
+              # Export the target user's Entra Object ID.
               f.write(f"principal_id={principal}\n")
+
+              # Export the Azure role definition GUID.
               f.write(f"role_definition_id={role['roleDefinitionId']}\n")
+
+              # Export the deterministic PIM request UUID.
               f.write(f"request_name={request}\n")
+
+          # End of the inline Python script.
           PY
 
   pim:
@@ -91,18 +249,27 @@ jobs:
       - name: Azure OIDC login
         uses: azure/login@v2
         with:
+          # Client ID of the Azure application/service principal configured for OIDC.
           client-id: ${{ vars.AZURE_CLIENT_ID }}
+
+          # Tenant and subscription values are passed from the validation job.
           tenant-id: ${{ needs.validate.outputs.tenant_id }}
           subscription-id: ${{ needs.validate.outputs.subscription_id }}
 
       - name: Generate deployment parameters from input.json
         env:
+          # Receive validated values from the previous job.
           AZURE_SUBSCRIPTION_ID: ${{ needs.validate.outputs.subscription_id }}
           PRINCIPAL_ID: ${{ needs.validate.outputs.principal_id }}
           ROLE_DEFINITION_ID: ${{ needs.validate.outputs.role_definition_id }}
           REQUEST_NAME: ${{ needs.validate.outputs.request_name }}
         run: |
+          # Stop the step if any command fails or an unset variable is used.
           set -euo pipefail
+
+          # Use jq to construct an ARM deployment parameters file.
+          # Values validated in the previous job are passed through environment variables.
+          # Other values (justification and ticket metadata) are read from input.json.
           jq --arg principal "$PRINCIPAL_ID" \
              --arg role "/subscriptions/$AZURE_SUBSCRIPTION_ID/providers/Microsoft.Authorization/roleDefinitions/$ROLE_DEFINITION_ID" \
              --arg request "$REQUEST_NAME" \
@@ -121,6 +288,7 @@ jobs:
       - name: Run PIM What-If
         if: ${{ inputs.deploy_pim != true }}
         run: |
+          # Preview the subscription deployment without creating the PIM request.
           az deployment sub what-if \
             --name "BIFROST-PIM-WhatIf-${{ github.run_number }}" \
             --location "centralindia" \
@@ -130,6 +298,8 @@ jobs:
       - name: Create PIM eligibility request
         if: ${{ inputs.deploy_pim == true }}
         run: |
+          # Create the subscription deployment and submit the PIM eligibility request.
+          # This step runs only when deploy_pim is explicitly set to true.
           az deployment sub create \
             --name "BIFROST-PIM-${{ github.run_number }}" \
             --location "centralindia" \
@@ -139,4 +309,6 @@ jobs:
 
       - name: Clean generated parameter file
         if: always()
-        run: rm -f pim.parameters.json
+        run: |
+          # Remove the temporary parameter file regardless of success or failure.
+          rm -f pim.parameters.json
