@@ -149,14 +149,17 @@
           "name": "BIFROSTDEVVMWIN001PIP",
           "allocationMethod": "Static",
           "sku": "Standard"
-        }
+        },
+        "virtualNetworkName": "BIFROSTDEVVNET001",
+        "subnetName": "BIFROSTDEVSubnet001"
       },
       "tags": {
         "Project": "BIFROST",
         "Environment": "Dev",
         "TicketId": "PIKE-12345",
         "DeploymentMethod": "Bicep"
-      }
+      },
+      "computerName": "BIFROSTWIN001"
     }
   ]
 }
