@@ -156,3 +156,133 @@ The parameters JSON file is a deployment input, not an additional file required 
 ```bash
 az bicep build --file modules/pim/pim.bicep
 ```
+
+---
+
+# Creating Azure resource PIM eligibility: Portal, Azure CLI, and BIFROST module
+
+> These instructions cover **Azure RBAC resource-level PIM eligibility** (for example, eligible Reader/Contributor on a Resource Group). They do not cover Microsoft Entra directory-role PIM such as Global Administrator. Eligibility is not active access; the user must activate the role through PIM when needed.
+
+## 1. Manually assign PIM eligibility using the Azure Portal UI
+
+1. Sign in to the [Azure portal](https://portal.azure.com) with an account authorized to manage PIM role eligibility.
+2. Open **Subscriptions** and select the target subscription.
+3. Navigate to **Access control (IAM)**.
+4. Open the scope's **Privileged Identity Management** role-management experience. Portal labels can vary.
+5. Select **Add assignments** (or **Add role** → **Add assignment**).
+6. Choose the Azure role to make eligible (for example, Reader or Contributor); follow least privilege.
+7. Select the target user and verify the identity. Supported principal types depend on the selected role and PIM scope.
+8. Select **Eligible** rather than **Active** for assignment type.
+9. Configure the eligibility start/end or duration according to organizational policy.
+10. Provide justification and ticket/change reference if prompted.
+11. Review scope, principal, role, assignment type, and duration.
+12. Select **Assign** to submit the request.
+13. Verify the assignment appears as **Eligible** in PIM at the target scope.
+14. When access is needed, the user goes to **Privileged Identity Management → My roles → Azure resources**, selects the eligible role, and chooses **Activate**. Complete MFA, justification, and approval requirements.
+
+**Licensing:** PIM may require Microsoft Entra ID P2 or Microsoft Entra ID Governance licensing. If Azure returns \`AadPremiumLicenseRequired\`, resolve the licensing prerequisite; changing deployment methods does not bypass it.
+
+## 2. Create Azure resource PIM eligibility using Azure CLI (\`az rest\`)
+
+Azure CLI versions do not all expose a dedicated simple PIM eligibility command. For Azure resource PIM, the Azure Resource Manager PIM API can be invoked using \`az rest\`. This is a direct API method; the BIFROST module below is the repeatable IaC approach.
+
+### Prerequisites
+
+- Azure CLI installed and authenticated.
+- Correct tenant and subscription selected.
+- Permission to submit Azure resource PIM eligibility requests at the target scope.
+- PIM licensing prerequisite satisfied.
+- Principal Object ID, role definition ID, and request GUID.
+
+\`\`\`bash
+az login
+az account set --subscription "<subscription-id>"
+
+SUBSCRIPTION_ID="<subscription-id>"
+RESOURCE_GROUP="<resource-group-name>"
+PRINCIPAL_ID="<entra-object-id>"
+ROLE_ID="<role-definition-guid>"
+REQUEST_GUID="$(python -c 'import uuid; print(uuid.uuid4())')"
+SCOPE="/subscriptions/\${SUBSCRIPTION_ID}/resourceGroups/\${RESOURCE_GROUP}"
+ROLE_DEFINITION_ID="/subscriptions/\${SUBSCRIPTION_ID}/providers/Microsoft.Authorization/roleDefinitions/\${ROLE_ID}"
+\`\`\`
+
+### Submit the eligibility request
+
+\`\`\`bash
+az rest \\
+  --method put \\
+  --url "https://management.azure.com\${SCOPE}/providers/Microsoft.Authorization/roleEligibilityScheduleRequests/\${REQUEST_GUID}?api-version=2020-10-01-preview" \\
+  --headers "Content-Type=application/json" \\
+  --body "{
+    \\"properties\\": {
+      \\"principalId\\": \\"\${PRINCIPAL_ID}\\",
+      \\"roleDefinitionId\\": \\"\${ROLE_DEFINITION_ID}\\",
+      \\"requestType\\": \\"AdminAssign\\",
+      \\"justification\\": \\"Approved access request - <ticket-id>\\",
+      \\"scheduleInfo\\": {
+        \\"startDateTime\\": \\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\\",
+        \\"expiration\\": {
+          \\"type\\": \\"AfterDuration\\",
+          \\"duration\\": \\"P30D\\"
+        }
+      },
+      \\"ticketInfo\\": {
+        \\"ticketNumber\\": \\"<ticket-id>\\",
+        \\"ticketSystem\\": \\"Jira\\"
+      }
+    }
+  }"
+\`\`\`
+
+For subscription scope, set \`SCOPE="/subscriptions/<subscription-id>"\`. For Resource Group scope, use \`/subscriptions/<subscription-id>/resourceGroups/<resource-group-name>\`. Verify the request body/API version against the [Azure PIM ARM API documentation](https://learn.microsoft.com/en-us/entra/id-governance/privileged-identity-management/pim-resource-roles-assign-roles) before production use.
+
+This creates an **eligibility request**, not immediate active access.
+
+## 3. Grant PIM eligibility through the BIFROST reusable Bicep module
+
+This is the intended automated repository workflow. The pipeline reads approved request values from \`input.json\`, validates them, creates deployment parameters, and deploys the reusable Bicep module.
+
+### Repository files
+
+- \`modules/pim/main.bicep\` — wrapper/orchestration template.
+- \`modules/pim/pim.bicep\` — defines the \`Microsoft.Authorization/roleEligibilityScheduleRequests\` resource.
+- \`.github/workflows/deploy.yml\` — PIM stage, authentication, parameter generation, and deployment.
+- \`input.json\` — request configuration and deployment-plan selection.
+
+### End-to-end steps
+
+1. Populate the PIM section in root \`input.json\`: target scope/resource group, principal Object ID, role definition ID, justification, duration, ticket system, and ticket number.
+2. Set the PIM deployment plan to \`create\` when an eligibility request is required.
+3. Configure the GitHub Environment (currently \`bifrost-dev\`) with the Azure OIDC settings required by the workflow.
+4. Ensure the GitHub Actions identity has appropriate PIM/role-assignment permissions at the requested scope.
+5. Run the workflow and select the PIM deployment option (\`deploy_pim\`). Keep the workflow selection and JSON plan consistent.
+6. The PIM stage reads the resolved JSON input and generates an ARM deployment parameters file. Request GUIDs should be generated deterministically or uniquely according to the implementation.
+7. The stage submits \`modules/pim/main.bicep\` through Azure Resource Manager; the wrapper invokes the reusable \`pim.bicep\` module.
+8. Azure validates the request, including tenant licensing, deployment permissions, principal, role, and scope.
+9. Review the workflow result and verify the eligibility assignment in Azure Portal at the target scope under PIM.
+10. The user activates the eligible role separately when access is required.
+
+### What the module does—and does not do
+
+**It does:**
+- request Azure resource-role eligibility;
+- use configured principal, role, scope, justification, schedule, and ticket metadata;
+- make the request repeatable and reviewable as IaC.
+
+**It does not:**
+- bypass PIM licensing or permissions;
+- automatically make the role active merely by creating eligibility;
+- automate user activation, MFA, or approval unless a separate supported activation workflow is implemented;
+- create Microsoft Entra directory-role PIM assignments.
+
+### Troubleshooting
+
+| Error / outcome | Meaning / next check |
+|---|---|
+| \`AadPremiumLicenseRequired\` | PIM licensing prerequisite is not satisfied; check Entra ID P2 / Governance licensing. |
+| Authorization / insufficient permissions | Check the GitHub deployment identity's permissions at the target scope. |
+| Principal not found | Verify principal Object ID and tenant. |
+| Invalid role definition ID | Verify full role definition resource ID and target scope. |
+| PIM “Not requested” stage | Expected when PIM is not selected; no eligibility request should be submitted. |
+| Eligibility created but access unavailable | User must activate the eligible role; activation policy may require MFA, justification, or approval. |
