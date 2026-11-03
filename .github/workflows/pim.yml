@@ -1,0 +1,139 @@
+name: BIFROST | PIM User Eligibility Assignment
+
+on:
+  workflow_dispatch:
+    inputs:
+      deploy_pim:
+        description: 'Create the PIM eligibility request (false = validation/What-If only)'
+        type: boolean
+        required: true
+        default: false
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  validate:
+    name: 01 - Validate PIM request and build Bicep
+    runs-on: ubuntu-latest
+    environment: bifrost-env
+    outputs:
+      subscription_id: ${{ steps.config.outputs.subscription_id }}
+      tenant_id: ${{ steps.config.outputs.tenant_id }}
+      principal_id: ${{ steps.config.outputs.principal_id }}
+      role_definition_id: ${{ steps.config.outputs.role_definition_id }}
+      request_name: ${{ steps.config.outputs.request_name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Azure CLI and Bicep
+        run: |
+          az version
+          az bicep install
+          az bicep version
+
+      - name: Build PIM Bicep module
+        run: az bicep build --file modules/pim/pim.bicep --stdout >/dev/null
+
+      - name: Validate input.json and prepare outputs
+        id: config
+        env:
+          AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq empty input.json
+          python - <<'PY'
+          import json, os, re, uuid
+          c = json.load(open("input.json", encoding="utf-8"))
+          pim = c["pim"]
+          user = pim["user"]
+          role = pim["role"]
+          sub = os.environ.get("AZURE_SUBSCRIPTION_ID", "")
+          tenant = os.environ.get("AZURE_TENANT_ID", "")
+          principal = user["principalId"]
+          def require(condition, message):
+              if not condition:
+                  raise SystemExit(message)
+          require(c["request"]["approved"] is True, "Request must be approved in input.json.")
+          require(c["subscription"]["name"] == "BIFROST-SC", "Only BIFROST-SC is allowed for this branch.")
+          require(sub and re.fullmatch(r"[0-9a-fA-F-]{36}", sub), "Set valid AZURE_SUBSCRIPTION_ID in GitHub environment bifrost-env.")
+          require(tenant and re.fullmatch(r"[0-9a-fA-F-]{36}", tenant), "Set valid AZURE_TENANT_ID in GitHub environment bifrost-env.")
+          require(pim["enabled"] is True, "pim.enabled must be true.")
+          require(pim["assignmentType"] == "Eligibility", "This workflow only supports PIM eligibility.")
+          require(user["alias"] == "pim_user_1", "Expected user alias pim_user_1.")
+          require(user["principalType"] == "User", "This workflow only supports User principals.")
+          require(re.fullmatch(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", principal), "Replace principalId with pim_user_1's Entra Object ID (GUID).")
+          require(re.fullmatch(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", role["roleDefinitionId"]), "roleDefinitionId must be a role GUID.")
+          require(pim["scope"]["type"] == "Subscription", "PIM scope must be Subscription.")
+          require(pim["schedule"]["expirationType"] == "AfterDuration", "Only AfterDuration is supported.")
+          require(pim["schedule"]["duration"].startswith("P"), "Use an ISO 8601 duration such as P90D.")
+          request = str(uuid.uuid5(uuid.NAMESPACE_URL, sub + principal + role["roleDefinitionId"] + pim["ticketInfo"]["ticketNumber"]))
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"subscription_id={sub}\n")
+              f.write(f"tenant_id={tenant}\n")
+              f.write(f"principal_id={principal}\n")
+              f.write(f"role_definition_id={role['roleDefinitionId']}\n")
+              f.write(f"request_name={request}\n")
+          PY
+
+  pim:
+    name: 02 - Preview or create PIM eligibility
+    needs: validate
+    runs-on: ubuntu-latest
+    environment: bifrost-env
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure OIDC login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ needs.validate.outputs.tenant_id }}
+          subscription-id: ${{ needs.validate.outputs.subscription_id }}
+
+      - name: Generate deployment parameters from input.json
+        env:
+          AZURE_SUBSCRIPTION_ID: ${{ needs.validate.outputs.subscription_id }}
+          PRINCIPAL_ID: ${{ needs.validate.outputs.principal_id }}
+          ROLE_DEFINITION_ID: ${{ needs.validate.outputs.role_definition_id }}
+          REQUEST_NAME: ${{ needs.validate.outputs.request_name }}
+        run: |
+          set -euo pipefail
+          jq --arg principal "$PRINCIPAL_ID" \
+             --arg role "/subscriptions/$AZURE_SUBSCRIPTION_ID/providers/Microsoft.Authorization/roleDefinitions/$ROLE_DEFINITION_ID" \
+             --arg request "$REQUEST_NAME" \
+             '{ "$schema":"https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#", contentVersion:"1.0.0.0", parameters: {
+                principalId:{value:$principal},
+                roleDefinitionId:{value:$role},
+                justification:{value:.pim.justification},
+                duration:{value:.pim.schedule.duration},
+                requestName:{value:$request},
+                ticketNumber:{value:.pim.ticketInfo.ticketNumber},
+                ticketSystem:{value:.pim.ticketInfo.ticketSystem}
+              }}' input.json > pim.parameters.json
+
+      - name: Run PIM What-If
+        if: inputs.deploy_pim == false
+        run: |
+          az deployment sub what-if \
+            --name "BIFROST-PIM-WhatIf-${{ github.run_number }}" \
+            --location "centralindia" \
+            --template-file modules/pim/pim.bicep \
+            --parameters @pim.parameters.json
+
+      - name: Create PIM eligibility request
+        if: inputs.deploy_pim == true
+        run: |
+          az deployment sub create \
+            --name "BIFROST-PIM-${{ github.run_number }}" \
+            --location "centralindia" \
+            --template-file modules/pim/pim.bicep \
+            --parameters @pim.parameters.json \
+            --output table
+
+      - name: Clean generated parameter file
+        if: always()
+        run: rm -f pim.parameters.json

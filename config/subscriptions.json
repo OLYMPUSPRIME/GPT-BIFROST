@@ -1,9 +1,0 @@
-[
-  {
-    "app_name": "BIFROST-SC",
-    "environment": "dev",
-    "sub_id": "efa057fe-e3b8-462a-98ba-08e0024d2442",
-    "input_file": "input.json",
-    "param_file": "generated from input.json at workflow runtime"
-  }
-]

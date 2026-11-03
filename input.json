@@ -1,91 +1,22 @@
 {
   "request": {
-    "ticketId": "PIKE-12345",
-    "requestedBy": "kureti.venkat.nishit@gmail.com",
+    "ticketId": "PIKE-PIM-001",
+    "requestedBy": "REPLACE_WITH_REQUESTER",
     "approved": true,
     "environment": "dev",
-    "deploymentMethod": "Bicep",
-    "project": "BIFROST"
+    "project": "BIFROST",
+    "deploymentMethod": "Bicep"
   },
   "subscription": {
     "name": "BIFROST-SC",
     "subscriptionId": "${AZURE_SUBSCRIPTION_ID}"
   },
-  "deployment": {
-    "location": "centralindia"
-  },
-  "resourceGroup": {
-    "name": "BIFROSTDEV001",
-    "location": "centralindia",
-    "tags": {
-      "Project": "BIFROST",
-      "Environment": "Dev",
-      "TicketId": "PIKE-12345",
-      "DeploymentMethod": "Bicep",
-      "ManagedBy": "GitHubActions"
-    }
-  },
-  "virtualMachine": {
-    "name": "BIFROSTDEVVM001",
-    "location": "centralindia",
-    "resourceGroupName": "BIFROSTDEV001",
-    "vmSize": "Standard_B2s",
-    "osType": "Linux",
-    "adminUsername": "azureuser",
-    "authenticationType": "SSH",
-    "sshPublicKey": "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIPsqFnE9WlJXA5HWa/TnLJNpGgHMN4D3pzO2HKGvis/R bifrost-azure-test",
-    "image": {
-      "publisher": "Canonical",
-      "offer": "ubuntu-24_04-lts",
-      "sku": "server",
-      "version": "latest"
-    },
-    "osDisk": {
-      "name": "BIFROSTDEVVM001OSDisk",
-      "diskSizeGB": 30,
-      "storageAccountType": "StandardSSD_LRS",
-      "caching": "ReadWrite"
-    },
-    "network": {
-      "virtualNetworkName": "BIFROSTDEVVNET001",
-      "addressPrefix": "10.10.0.0/16",
-      "subnetName": "BIFROSTDEVSubnet001",
-      "subnetPrefix": "10.10.1.0/24",
-      "networkSecurityGroupName": "BIFROSTDEVNSG001",
-      "networkInterfaceName": "BIFROSTDEVNIC001",
-      "publicIp": {
-        "create": true,
-        "name": "BIFROSTDEVVM001PIP",
-        "allocationMethod": "Static",
-        "sku": "Standard"
-      },
-      "sshAllowedSourceAddressPrefix": "134.238.17.18/32",
-      "securityRules": [
-        {
-          "name": "AllowSSHFromApprovedSource",
-          "priority": 100,
-          "direction": "Inbound",
-          "access": "Allow",
-          "protocol": "Tcp",
-          "sourcePortRange": "*",
-          "destinationPortRange": "22",
-          "sourceAddressPrefix": "134.238.17.18/32",
-          "destinationAddressPrefix": "*"
-        }
-      ]
-    },
-    "tags": {
-      "Project": "BIFROST",
-      "Environment": "Dev",
-      "TicketId": "PIKE-12345",
-      "DeploymentMethod": "Bicep"
-    }
-  },
   "pim": {
     "enabled": true,
     "assignmentType": "Eligibility",
-    "principal": {
-      "principalId": "f96ea3bd-b3ab-433a-ab58-e8c809969f96",
+    "user": {
+      "alias": "pim_user_1",
+      "principalId": "REPLACE_WITH_PIM_USER_1_ENTRA_OBJECT_ID",
       "principalType": "User"
     },
     "role": {
@@ -93,73 +24,16 @@
       "roleDefinitionId": "b24988ac-6180-42a0-ab88-20f7382dd24c"
     },
     "scope": {
-      "type": "ResourceGroup",
-      "resourceGroupName": "BIFROSTDEV001"
+      "type": "Subscription"
     },
     "schedule": {
       "duration": "P90D",
-      "startDateTime": null,
       "expirationType": "AfterDuration"
     },
-    "justification": "Access required for BIFROST infrastructure deployment and support.",
+    "justification": "Eligible Contributor access requested for BIFROST infrastructure support.",
     "ticketInfo": {
       "ticketSystem": "Jira",
-      "ticketNumber": "PIKE-12345"
+      "ticketNumber": "PIKE-PIM-001"
     }
-  },
-  "deploymentPlan": {
-    "resourceGroup": "create",
-    "networking": {
-      "nsg": "create",
-      "vnet": "create",
-      "subnet": "create",
-      "publicIp": "create",
-      "nic": "create"
-    },
-    "virtualMachine": "create",
-    "pim": "create",
-    "windowsVirtualMachine": "create"
-  },
-  "virtualMachines": [
-    {
-      "name": "BIFROSTDEVVMWIN001",
-      "location": "centralindia",
-      "resourceGroupName": "BIFROSTDEV001",
-      "vmSize": "Standard_B2s",
-      "osType": "Windows",
-      "adminUsername": "azureadmin",
-      "authenticationType": "Password",
-      "adminPassword": "${WINDOWS_VM_ADMIN_PASSWORD}",
-      "image": {
-        "publisher": "MicrosoftWindowsServer",
-        "offer": "WindowsServer",
-        "sku": "2022-datacenter-azure-edition",
-        "version": "latest"
-      },
-      "osDisk": {
-        "name": "BIFROSTDEVVMWIN001OSDisk",
-        "diskSizeGB": 64,
-        "storageAccountType": "StandardSSD_LRS",
-        "caching": "ReadWrite"
-      },
-      "network": {
-        "networkInterfaceName": "BIFROSTDEVNICWIN001",
-        "publicIp": {
-          "create": true,
-          "name": "BIFROSTDEVVMWIN001PIP",
-          "allocationMethod": "Static",
-          "sku": "Standard"
-        },
-        "virtualNetworkName": "BIFROSTDEVVNET001",
-        "subnetName": "BIFROSTDEVSubnet001"
-      },
-      "tags": {
-        "Project": "BIFROST",
-        "Environment": "Dev",
-        "TicketId": "PIKE-12345",
-        "DeploymentMethod": "Bicep"
-      },
-      "computerName": "BIFROSTWIN001"
-    }
-  ]
+  }
 }
