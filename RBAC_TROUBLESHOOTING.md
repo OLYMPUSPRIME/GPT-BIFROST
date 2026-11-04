@@ -2,7 +2,7 @@
 
 ## Verify first
 - Workflow path `.github/workflows/rbac.yml`
-- GitHub Environment `bifrost-env`
+- GitHub Environment `bifrost-dev`
 - AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID
 - OIDC issuer/audience/subject
 - input.json approval, principal Object ID GUID, role GUID and scope
@@ -11,7 +11,7 @@
 | Symptom | Resolution |
 |---|---|
 | Azure login/federation fails | Check client/tenant/sub IDs and OIDC federated subject/environment. |
-| Environment vars empty | Job must use `environment: bifrost-env`; set vars there. |
+| Environment vars empty | Job must use `environment: bifrost-dev`; set vars there. |
 | Invalid principal GUID | Use Entra Object ID, not UPN/email/display name. |
 | PrincipalNotFound | Confirm principal exists in target tenant and ID is correct. |
 | AuthorizationFailed / roleAssignments/write | Grant least-privilege role-assignment administration permissions; Contributor is insufficient. |
