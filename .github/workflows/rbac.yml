@@ -98,7 +98,7 @@ jobs:
           ROLE_GUID: ${{ needs.validate.outputs.role_guid }}
           ASSIGNMENT_NAME: ${{ needs.validate.outputs.assignment_name }}
         run: |
-          jq --arg sub "$SUB_ID" --arg principal "$PRINCIPAL_ID" --arg type "$PRINCIPAL_TYPE" --arg role "$ROLE_GUID" --arg name "$ASSIGNMENT_NAME"             '{ "$schema":"https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#", contentVersion:"1.0.0.0", parameters:{principalId:{value:$principal},principalType:{value:$type},roleDefinitionGuid:{value:$role},subscriptionId:{value:$sub},roleAssignmentName:{value:$name},description:{value:.rbac.description}}}' input.json > rbac.parameters.json
+          jq --arg sub "$SUB_ID" --arg principal "$PRINCIPAL_ID" --arg type "$PRINCIPAL_TYPE" --arg role "$ROLE_GUID" --arg name "$ASSIGNMENT_NAME"             '{ "$schema":"https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#", contentVersion:"1.0.0.0", parameters:{principalId:{value:$principal},principalType:{value:$type},roleDefinitionGuid:{value:$role},subscriptionId:{value:$sub},roleAssignmentName:{value:$name},assignmentDescription:{value:.rbac.description}}}' input.json > rbac.parameters.json
       - name: Run RBAC What-If
         run: az deployment sub what-if --name "BIFROST-RBAC-WhatIf-${{ github.run_number }}" --location centralindia --template-file modules/rbac/rbac.bicep --parameters @rbac.parameters.json --output json
       - if: always()
@@ -126,7 +126,7 @@ jobs:
           ROLE_GUID: ${{ needs.validate.outputs.role_guid }}
           ASSIGNMENT_NAME: ${{ needs.validate.outputs.assignment_name }}
         run: |
-          jq --arg sub "$SUB_ID" --arg principal "$PRINCIPAL_ID" --arg type "$PRINCIPAL_TYPE" --arg role "$ROLE_GUID" --arg name "$ASSIGNMENT_NAME"             '{ "$schema":"https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#", contentVersion:"1.0.0.0", parameters:{principalId:{value:$principal},principalType:{value:$type},roleDefinitionGuid:{value:$role},subscriptionId:{value:$sub},roleAssignmentName:{value:$name},description:{value:.rbac.description}}}' input.json > rbac.parameters.json
+          jq --arg sub "$SUB_ID" --arg principal "$PRINCIPAL_ID" --arg type "$PRINCIPAL_TYPE" --arg role "$ROLE_GUID" --arg name "$ASSIGNMENT_NAME"             '{ "$schema":"https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#", contentVersion:"1.0.0.0", parameters:{principalId:{value:$principal},principalType:{value:$type},roleDefinitionGuid:{value:$role},subscriptionId:{value:$sub},roleAssignmentName:{value:$name},assignmentDescription:{value:.rbac.description}}}' input.json > rbac.parameters.json
       - name: Create direct RBAC assignment
         run: az deployment sub create --name "BIFROST-RBAC-${{ github.run_number }}" --location centralindia --template-file modules/rbac/rbac.bicep --parameters @rbac.parameters.json --output table
       - if: always()
