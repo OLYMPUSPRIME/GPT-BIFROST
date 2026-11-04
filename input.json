@@ -1,7 +1,7 @@
 {
   "request": {
     "ticketId": "PIKE-PIM-001",
-    "requestedBy": "REPLACE_WITH_REQUESTER",
+    "requestedBy": "kureti.venkat.nishit@gmail.com",
     "approved": true,
     "environment": "dev",
     "project": "BIFROST",
@@ -16,7 +16,7 @@
     "assignmentType": "Eligibility",
     "user": {
       "alias": "pim_user_1",
-      "principalId": "REPLACE_WITH_PIM_USER_1_ENTRA_OBJECT_ID",
+      "principalId": "ccf15dd1-bc15-445a-9b5f-4e2dffc79e03", # This is the Object ID from the Azure Portal of the User pim_user_1@kureti.venkat.nishit@gmail.com
       "principalType": "User"
     },
     "role": {
