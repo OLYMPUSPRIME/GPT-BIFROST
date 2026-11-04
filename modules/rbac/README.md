@@ -1,13 +1,32 @@
-# RBAC Bicep Module
+# Azure RBAC Module Library
 
-Creates a direct subscription-scoped Azure role assignment using `Microsoft.Authorization/roleAssignments@2022-04-01`.
+This library supports independent direct RBAC assignments at **Subscription**, **Resource Group**, or **Individual Resource** scope. Select one scope per pipeline run using root `input.json`.
 
-Parameters: principal Object ID, principal type, role GUID, subscription ID, deterministic assignment GUID, and description.
+## Scope options
 
-This grants active access immediately; it is **not PIM**. The deployment identity must have roleAssignments/write permission. Contributor alone is not sufficient.
+### Subscription
+```json
+"scope": {"type":"Subscription","resourceGroupName":"","resourceId":""}
+```
+Uses `modules/rbac/rbac.bicep` and subscription-level ARM What-If/deployment.
 
-| Role | GUID |
-|---|---|
-| Reader | `acdd72a7-3385-48ef-bd42-f606fba81ae7` |
-| Contributor | `b24988ac-6180-42a0-ab88-20f7382dd24c` |
-| Owner | `8e3af657-a8ff-443c-a75c-2fe8c4bcb635` |
+### Resource Group
+```json
+"scope": {"type":"ResourceGroup","resourceGroupName":"example-rg","resourceId":""}
+```
+Uses `modules/rbac/resourceGroup/rbac.bicep` and resource-group ARM What-If/deployment.
+
+### Individual resource
+```json
+"scope": {"type":"Resource","resourceGroupName":"example-rg","resourceId":"/subscriptions/<SUB_ID>/resourceGroups/example-rg/providers/Microsoft.Compute/virtualMachines/example-vm"}
+```
+Uses `az role assignment create` with the complete resource ID. The preview step prints the proposed scope and checks existing assignments. Azure ARM What-If does not preview this direct CLI role-assignment operation.
+
+## Inputs
+- principal Object ID and type (User/Group/ServicePrincipal)
+- role definition GUID
+- scope type and scope target
+- approval metadata and description
+
+## Security
+Direct RBAC grants access immediately. Validate least privilege, principal, role, and scope before enabling deployment. The identity running the workflow must have roleAssignments/write at the target scope (e.g., suitable RBAC Administrator/User Access Administrator grant). Contributor alone is insufficient.
