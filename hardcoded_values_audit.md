@@ -5,7 +5,7 @@
 - Module: `modules/rbac/rbac.bicep`
 - Subscription guardrail: BIFROST-SC
 - Deployment metadata location: centralindia
-- GitHub Environment: bifrost-env
+- GitHub Environment: bifrost-dev
 - Supported scope: subscription
 - Default sample role: Reader (`acdd72a7-3385-48ef-bd42-f606fba81ae7`)
 - API: `Microsoft.Authorization/roleAssignments@2022-04-01`
