@@ -1,7 +1,7 @@
 {
   "request": {
-    "ticketId": "PIKE-PIM-001",
-    "requestedBy": "kureti.venkat.nishit@gmail.com",
+    "ticketId": "PIKE-RBAC-001",
+    "requestedBy": "REQUESTER_EMAIL_OR_ALIAS",
     "approved": true,
     "environment": "dev",
     "project": "BIFROST",
@@ -11,29 +11,18 @@
     "name": "BIFROST-SC",
     "subscriptionId": "${AZURE_SUBSCRIPTION_ID}"
   },
-  "pim": {
+  "rbac": {
     "enabled": true,
-    "assignmentType": "Eligibility",
-    "user": {
-      "alias": "pim_user_1",
-      "principalId": "ccf15dd1-bc15-445a-9b5f-4e2dffc79e03",
+    "principal": {
+      "alias": "rbac_principal_1",
+      "principalId": "REPLACE_WITH_ENTRA_OBJECT_ID_GUID",
       "principalType": "User"
     },
     "role": {
-      "roleName": "Contributor",
-      "roleDefinitionId": "b24988ac-6180-42a0-ab88-20f7382dd24c"
+      "roleName": "Reader",
+      "roleDefinitionGuid": "acdd72a7-3385-48ef-bd42-f606fba81ae7"
     },
-    "scope": {
-      "type": "Subscription"
-    },
-    "schedule": {
-      "duration": "P90D",
-      "expirationType": "AfterDuration"
-    },
-    "justification": "Eligible Contributor access requested for BIFROST infrastructure support.",
-    "ticketInfo": {
-      "ticketSystem": "Jira",
-      "ticketNumber": "PIKE-PIM-001"
-    }
+    "scope": {"type": "Subscription"},
+    "description": "Approved direct Azure RBAC assignment for BIFROST infrastructure support."
   }
 }
