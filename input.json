@@ -16,7 +16,7 @@
     "assignmentType": "Eligibility",
     "user": {
       "alias": "pim_user_1",
-      "principalId": "ccf15dd1-bc15-445a-9b5f-4e2dffc79e03", // This is the Object ID from the Azure Portal of the User pim_user_1@kureti.venkat.nishit@gmail.com
+      "principalId": "ccf15dd1-bc15-445a-9b5f-4e2dffc79e03",
       "principalType": "User"
     },
     "role": {
