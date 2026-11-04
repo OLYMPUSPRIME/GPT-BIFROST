@@ -1,7 +1,7 @@
 {
   "request": {
     "ticketId": "PIKE-RBAC-001",
-    "requestedBy": "REQUESTER_EMAIL_OR_ALIAS",
+    "requestedBy": "kureti.venkat.nishit@gmail.com",
     "approved": true,
     "environment": "dev",
     "project": "BIFROST",
@@ -15,7 +15,7 @@
     "enabled": true,
     "principal": {
       "alias": "rbac_principal_1",
-      "principalId": "REPLACE_WITH_ENTRA_OBJECT_ID_GUID",
+      "principalId": "ccf15dd1-bc15-445a-9b5f-4e2dffc79e03",
       "principalType": "User"
     },
     "role": {
