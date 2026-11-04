@@ -2,7 +2,7 @@
 
 Workflow: `.github/workflows/rbac.yml`
 
-Root `input.json` includes approval/ticket metadata, target subscription, principal Object ID/type, role GUID, scope type, and description. GitHub Environment `bifrost-env` contains AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID.
+Root `input.json` includes approval/ticket metadata, target subscription, principal Object ID/type, role GUID, scope type, and description. GitHub Environment `bifrost-dev` contains AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID.
 
 ## Jobs
 1. Validate input and compile Bicep.
