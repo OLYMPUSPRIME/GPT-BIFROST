@@ -1,17 +1,29 @@
 # RBAC Pipeline Inputs and Execution
 
-Workflow: `.github/workflows/rbac.yml`
+Workflow: `.github/workflows/rbac.yml`; GitHub environment: `bifrost-dev`.
 
-Root `input.json` includes approval/ticket metadata, target subscription, principal Object ID/type, role GUID, scope type, and description. GitHub Environment `bifrost-dev` contains AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID.
+## Scope input examples
 
-## Jobs
-1. Validate input and compile Bicep.
-2. Optional What-If preview.
-3. Direct role assignment only when `deploy_rbac=true`.
-4. Optional access report/artifact.
+Subscription:
+```json
+"scope": {"type":"Subscription","resourceGroupName":"","resourceId":""}
+```
 
-Run Actions → BIFROST RBAC Mark-1 → choose `feature/RBAC_mark_1`. Preview first, inspect principal/role/scope, and deploy only after approval.
+Resource Group:
+```json
+"scope": {"type":"ResourceGroup","resourceGroupName":"bifrost-rg","resourceId":""}
+```
 
-Assignment name is deterministic from subscription + principal + role + scope type, supporting idempotent repeat deployments.
+Individual resource:
+```json
+"scope": {"type":"Resource","resourceGroupName":"bifrost-rg","resourceId":"/subscriptions/<SUB_ID>/resourceGroups/bifrost-rg/providers/Microsoft.Compute/virtualMachines/bifrost-vm"}
+```
 
-OIDC identity needs role-assignment write permission. Contributor does not grant this.
+## Workflow stages
+1. Validate approval, subscription, principal, role, and selected scope.
+2. Build both subscription and resource-group Bicep modules.
+3. Preview: Subscription What-If; Resource Group What-If; individual resource preview/check (no ARM What-If for direct CLI RBAC).
+4. Deploy only if `deploy_rbac=true`: subscription Bicep, RG Bicep, or `az role assignment create` based on scope.
+5. Optional principal RBAC access report.
+
+Assignment GUID is deterministic based on subscription + principal + role + exact scope, preventing accidental GUID collisions across different scopes. The workflow is manually dispatched. Review before deploying.
