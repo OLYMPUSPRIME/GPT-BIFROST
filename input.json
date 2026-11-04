@@ -1,7 +1,7 @@
 {
   "request": {
     "ticketId": "PIKE-RBAC-001",
-    "requestedBy": "kureti.venkat.nishit@gmail.com",
+    "requestedBy": "REQUESTER_EMAIL_OR_ALIAS",
     "approved": true,
     "environment": "dev",
     "project": "BIFROST",
@@ -15,14 +15,18 @@
     "enabled": true,
     "principal": {
       "alias": "rbac_principal_1",
-      "principalId": "ccf15dd1-bc15-445a-9b5f-4e2dffc79e03",
+      "principalId": "REPLACE_WITH_ENTRA_OBJECT_ID_GUID",
       "principalType": "User"
     },
     "role": {
       "roleName": "Reader",
       "roleDefinitionGuid": "acdd72a7-3385-48ef-bd42-f606fba81ae7"
     },
-    "scope": {"type": "Subscription"},
+    "scope": {
+      "type": "Subscription",
+      "resourceGroupName": "",
+      "resourceId": ""
+    },
     "description": "Approved direct Azure RBAC assignment for BIFROST infrastructure support."
   }
 }
