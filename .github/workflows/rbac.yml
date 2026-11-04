@@ -1,0 +1,167 @@
+name: BIFROST RBAC Mark-1
+on:
+  workflow_dispatch:
+    inputs:
+      run_what_if:
+        description: Run subscription-level RBAC What-If preview
+        type: boolean
+        required: true
+        default: true
+      deploy_rbac:
+        description: Create or update the direct Azure RBAC assignment
+        type: boolean
+        required: true
+        default: false
+      view_access:
+        description: Generate target principal RBAC access report
+        type: boolean
+        required: true
+        default: true
+permissions:
+  id-token: write
+  contents: read
+jobs:
+  validate:
+    name: 01 - Validate RBAC input and build Bicep
+    runs-on: ubuntu-latest
+    environment: bifrost-env
+    outputs:
+      subscription_id: ${{ steps.config.outputs.subscription_id }}
+      tenant_id: ${{ steps.config.outputs.tenant_id }}
+      principal_id: ${{ steps.config.outputs.principal_id }}
+      role_guid: ${{ steps.config.outputs.role_guid }}
+      assignment_name: ${{ steps.config.outputs.assignment_name }}
+      principal_type: ${{ steps.config.outputs.principal_type }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Azure CLI and Bicep
+        run: |
+          az version
+          az bicep install
+          az bicep version
+      - name: Build RBAC Bicep module
+        run: az bicep build --file modules/rbac/rbac.bicep --stdout >/dev/null
+      - name: Validate input and prepare outputs
+        id: config
+        env:
+          AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          jq empty input.json
+          python - <<'PY'
+          import json, os, re, uuid
+          with open("input.json", encoding="utf-8") as f:
+              c = json.load(f)
+          rbac = c["rbac"]
+          principal = rbac["principal"]["principalId"]
+          role_guid = rbac["role"]["roleDefinitionGuid"]
+          sub = os.environ.get("AZURE_SUBSCRIPTION_ID", "")
+          tenant = os.environ.get("AZURE_TENANT_ID", "")
+          guid = r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+          def require(ok, msg):
+              if not ok: raise SystemExit(msg)
+          require(c["request"]["approved"] is True, "Request must be approved in input.json.")
+          require(c["subscription"]["name"] == "BIFROST-SC", "Only BIFROST-SC is allowed.")
+          require(bool(re.fullmatch(guid, sub)), "Set valid AZURE_SUBSCRIPTION_ID in GitHub environment bifrost-env.")
+          require(bool(re.fullmatch(guid, tenant)), "Set valid AZURE_TENANT_ID in GitHub environment bifrost-env.")
+          require(rbac["enabled"] is True, "rbac.enabled must be true.")
+          require(rbac["principal"]["principalType"] in ("User", "Group", "ServicePrincipal"), "Unsupported principalType.")
+          require(bool(re.fullmatch(guid, principal)), "Replace principalId with the Entra Object ID GUID.")
+          require(bool(re.fullmatch(guid, role_guid)), "roleDefinitionGuid must be a GUID.")
+          require(rbac["scope"]["type"] == "Subscription", "This version supports subscription scope only.")
+          name = str(uuid.uuid5(uuid.NAMESPACE_URL, sub + principal + role_guid + rbac["scope"]["type"]))
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
+              f.write(f"subscription_id={sub}\ntenant_id={tenant}\nprincipal_id={principal}\nrole_guid={role_guid}\nassignment_name={name}\nprincipal_type={rbac['principal']['principalType']}\n")
+          PY
+  what_if:
+    name: 02 - RBAC What-If preview
+    needs: validate
+    if: ${{ inputs.run_what_if == true }}
+    runs-on: ubuntu-latest
+    environment: bifrost-env
+    steps:
+      - uses: actions/checkout@v4
+      - name: Azure OIDC login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ needs.validate.outputs.tenant_id }}
+          subscription-id: ${{ needs.validate.outputs.subscription_id }}
+      - run: az bicep install
+      - name: Generate RBAC parameters
+        env:
+          SUB_ID: ${{ needs.validate.outputs.subscription_id }}
+          PRINCIPAL_ID: ${{ needs.validate.outputs.principal_id }}
+          PRINCIPAL_TYPE: ${{ needs.validate.outputs.principal_type }}
+          ROLE_GUID: ${{ needs.validate.outputs.role_guid }}
+          ASSIGNMENT_NAME: ${{ needs.validate.outputs.assignment_name }}
+        run: |
+          jq --arg sub "$SUB_ID" --arg principal "$PRINCIPAL_ID" --arg type "$PRINCIPAL_TYPE" --arg role "$ROLE_GUID" --arg name "$ASSIGNMENT_NAME"             '{ "$schema":"https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#", contentVersion:"1.0.0.0", parameters:{principalId:{value:$principal},principalType:{value:$type},roleDefinitionGuid:{value:$role},subscriptionId:{value:$sub},roleAssignmentName:{value:$name},description:{value:.rbac.description}}}' input.json > rbac.parameters.json
+      - name: Run RBAC What-If
+        run: az deployment sub what-if --name "BIFROST-RBAC-WhatIf-${{ github.run_number }}" --location centralindia --template-file modules/rbac/rbac.bicep --parameters @rbac.parameters.json --output json
+      - if: always()
+        run: rm -f rbac.parameters.json
+  deploy_rbac:
+    name: 03 - Deploy direct RBAC assignment
+    needs: validate
+    if: ${{ inputs.deploy_rbac == true }}
+    runs-on: ubuntu-latest
+    environment: bifrost-env
+    steps:
+      - uses: actions/checkout@v4
+      - name: Azure OIDC login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ needs.validate.outputs.tenant_id }}
+          subscription-id: ${{ needs.validate.outputs.subscription_id }}
+      - run: az bicep install
+      - name: Generate RBAC parameters
+        env:
+          SUB_ID: ${{ needs.validate.outputs.subscription_id }}
+          PRINCIPAL_ID: ${{ needs.validate.outputs.principal_id }}
+          PRINCIPAL_TYPE: ${{ needs.validate.outputs.principal_type }}
+          ROLE_GUID: ${{ needs.validate.outputs.role_guid }}
+          ASSIGNMENT_NAME: ${{ needs.validate.outputs.assignment_name }}
+        run: |
+          jq --arg sub "$SUB_ID" --arg principal "$PRINCIPAL_ID" --arg type "$PRINCIPAL_TYPE" --arg role "$ROLE_GUID" --arg name "$ASSIGNMENT_NAME"             '{ "$schema":"https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#", contentVersion:"1.0.0.0", parameters:{principalId:{value:$principal},principalType:{value:$type},roleDefinitionGuid:{value:$role},subscriptionId:{value:$sub},roleAssignmentName:{value:$name},description:{value:.rbac.description}}}' input.json > rbac.parameters.json
+      - name: Create direct RBAC assignment
+        run: az deployment sub create --name "BIFROST-RBAC-${{ github.run_number }}" --location centralindia --template-file modules/rbac/rbac.bicep --parameters @rbac.parameters.json --output table
+      - if: always()
+        run: rm -f rbac.parameters.json
+  access_report:
+    name: 04 - Report principal RBAC assignments
+    needs: [validate, what_if, deploy_rbac]
+    if: ${{ always() && needs.validate.result == 'success' && inputs.view_access == true }}
+    runs-on: ubuntu-latest
+    environment: bifrost-env
+    steps:
+      - uses: actions/checkout@v4
+      - name: Azure OIDC login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ needs.validate.outputs.tenant_id }}
+          subscription-id: ${{ needs.validate.outputs.subscription_id }}
+      - name: Collect current RBAC assignments
+        env:
+          SUB_ID: ${{ needs.validate.outputs.subscription_id }}
+          PRINCIPAL_ID: ${{ needs.validate.outputs.principal_id }}
+        run: |
+          set -euo pipefail
+          mkdir -p access-report
+          az role assignment list --assignee "$PRINCIPAL_ID" --scope "/subscriptions/$SUB_ID" --include-inherited --all --output json > access-report/role-assignments.json
+          {
+            echo "## BIFROST RBAC Access Report"
+            echo "- Subscription: $SUB_ID"
+            echo "- Principal Object ID: $PRINCIPAL_ID"
+            echo "- Generated UTC: $(date -u '+%Y-%m-%d %H:%M:%S')"
+            jq '[.[] | {role: .roleDefinitionName, scope: .scope, principalId: .principalId, principalType: .principalType, condition: .condition}]' access-report/role-assignments.json
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bifrost-rbac-access-report-${{ github.run_number }}
+          path: access-report/
+          retention-days: 30
