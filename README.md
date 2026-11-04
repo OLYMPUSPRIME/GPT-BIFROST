@@ -37,7 +37,7 @@ Role examples:
 Prefer least privilege.
 
 ## GitHub Environment
-Configure `bifrost-env`: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`. Configure OIDC federation to trust the repository/environment. Avoid client secrets.
+Configure `bifrost-dev`: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`. Configure OIDC federation to trust the repository/environment. Avoid client secrets.
 
 ## Azure permissions
 The OIDC principal needs role assignment write permissions at target scope (e.g. appropriately scoped Role Based Access Control Administrator or User Access Administrator per policy). Contributor alone is insufficient.
