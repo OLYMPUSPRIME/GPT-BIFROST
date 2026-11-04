@@ -1,176 +1,69 @@
-# GPT-BIFROST | PIM User Eligibility
+# GPT-BIFROST | Azure RBAC Assignment
 
-**Branch:** `feature/PIM_mark_1`  
-**Purpose:** This branch is dedicated only to granting Microsoft Entra users **Azure PIM eligible role access**. It does not deploy VMs, networks, resource groups, monitoring, backup, storage, or direct RBAC assignments.
+**Branch:** `feature/RBAC_mark_1`  
+This branch is RBAC-only: it creates **direct Azure RBAC role assignments**. It does not create PIM eligibility or activation requests.
 
-## What this workflow does
+## Workflow
+- Read root `input.json`.
+- Validate approval, subscription, principal Object ID/type, role GUID, and scope.
+- Authenticate to Azure using GitHub Actions OIDC.
+- Build Bicep and run subscription What-If.
+- Create the direct assignment only when `deploy_rbac=true`.
+- Optionally collect existing role assignments for the principal.
 
-- Reads the PIM request from root `input.json`.
-- Uses GitHub Actions OIDC to authenticate to Azure.
-- Builds and validates the PIM Bicep module.
-- Runs a subscription-level What-If preview by default.
-- Creates a PIM eligibility schedule request only when `deploy_pim` is explicitly enabled.
-- Assigns eligibility to the configured user (sample alias: `pim_user_1`) for the selected role and duration.
-
-> **Important:** PIM eligibility is not immediate active access. The eligible user must activate the role through Microsoft Entra PIM and satisfy any configured MFA, approval, justification, or other activation requirements.
+> Direct RBAC grants access immediately and has no PIM activation or duration. Remove the role assignment when no longer needed.
 
 ## Repository layout
-
 ```text
-GPT-BIFROST/
-├── .github/
-│   └── workflows/
-│       └── pim.yml
-├── modules/
-│   └── pim/
-│       └── pim.bicep
-├── input.json
-└── README.md
+.github/workflows/rbac.yml
+modules/rbac/rbac.bicep
+modules/rbac/README.md
+input.json
+RBAC_ACCESS_PURPOSE_AND_SCOPE.md
+RBAC_PIPELINE_INPUTS_AND_EXECUTION.md
+RBAC_TROUBLESHOOTING.md
+CREATE_ENTRA_PRINCIPAL_AZURE_PORTAL.md
+hardcoded_values_audit.md
 ```
 
-## Input configuration
+## Input
+Replace `rbac.principal.principalId` with the Entra Object ID GUID. Supported principal types: User, Group, ServicePrincipal. Current module supports subscription scope and validates subscription name `BIFROST-SC`.
 
-The root `input.json` is the single source of request configuration.
+Role examples:
+- Reader: `acdd72a7-3385-48ef-bd42-f606fba81ae7`
+- Contributor: `b24988ac-6180-42a0-ab88-20f7382dd24c`
+- Owner: `8e3af657-a8ff-443c-a75c-2fe8c4bcb635`
 
-### Required user identity
+Prefer least privilege.
 
-```json
-"user": {
-  "alias": "pim_user_1",
-  "principalId": "REPLACE_WITH_PIM_USER_1_ENTRA_OBJECT_ID",
-  "principalType": "User"
-}
-```
-
-`alias` is a human-readable label used in this repository. Azure PIM requires the user's **Microsoft Entra Object ID (GUID)**, not a display name or email address. Replace the placeholder with the actual object ID before running the workflow.
-
-Find the Object ID in Azure Portal:
-
-1. Open **Microsoft Entra ID → Users**.
-2. Search for the intended user.
-3. Open the user profile.
-4. Copy **Object ID**.
-5. Update `pim.user.principalId` in `input.json`.
-
-Or use Azure CLI:
-
-```bash
-az ad user show --id "user@yourdomain.com" --query id --output tsv
-```
-
-The alias `pim_user_1` does not automatically create a user in Entra ID and is not a valid principal ID by itself.
-
-## PIM parameters
-
-| JSON property | Description |
-|---|---|
-| `request.approved` | Must be `true`; represents request approval in this sample. |
-| `subscription.name` | Subscription guardrail; currently `BIFROST-SC`. |
-| `pim.enabled` | Enables PIM configuration. |
-| `pim.assignmentType` | Currently supports `Eligibility`. |
-| `pim.user.principalId` | Entra Object ID of the user. |
-| `pim.role.roleName` | Human-readable role name. |
-| `pim.role.roleDefinitionId` | Azure role definition GUID. |
-| `pim.scope.type` | Currently `Subscription`. |
-| `pim.schedule.duration` | ISO 8601 duration; sample `P90D` (90 days). |
-| `pim.justification` | Business reason for the access request. |
-| `pim.ticketInfo.ticketNumber` | Request/ticket reference. |
-
-### Default role
-
-The sample uses **Contributor**:
-
-```text
-b24988ac-6180-42a0-ab88-20f7382dd24c
-```
-
-Contributor can manage Azure resources but does not grant permission to assign Azure roles. Review the role carefully and use least privilege.
-
-## GitHub Environment configuration
-
-Configure the GitHub repository environment named **`bifrost-env`**:
-
-| Environment variable | Required | Purpose |
-|---|---|---|
-| `AZURE_CLIENT_ID` | Yes | Entra application / workload identity client ID used by Azure Login. |
-| `AZURE_TENANT_ID` | Yes | Entra tenant ID. |
-| `AZURE_SUBSCRIPTION_ID` | Yes | Target subscription ID for BIFROST-SC. |
-
-The workflow uses the GitHub Environment variables through `vars.*`. Configure the federated credential to trust the repository and the appropriate GitHub environment. Do not store client secrets when OIDC is available.
+## GitHub Environment
+Configure `bifrost-env`: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`. Configure OIDC federation to trust the repository/environment. Avoid client secrets.
 
 ## Azure permissions
+The OIDC principal needs role assignment write permissions at target scope (e.g. appropriately scoped Role Based Access Control Administrator or User Access Administrator per policy). Contributor alone is insufficient.
 
-The GitHub OIDC identity needs sufficient permissions to submit subscription-level PIM eligibility schedule requests. Ordinary Contributor access is not sufficient.
+## Run
+1. Actions → **BIFROST RBAC Mark-1**.
+2. Select `feature/RBAC_mark_1`.
+3. Run with `deploy_rbac=false` first and review What-If.
+4. Verify principal, role, scope, and ticket approval.
+5. Run with `deploy_rbac=true` only after authorization.
 
-Depending on your tenant's authorization model, use an appropriately authorized administrator/role such as Privileged Role Administrator or a delegated role with the required Microsoft.Authorization PIM schedule request permissions. Follow least privilege and organizational approval requirements.
-
-The user creating eligibility should be authorized to assign the requested role at the target scope. The assigned role and scope must comply with tenant PIM policies.
-
-## Run the workflow
-
-1. Push the changes to `feature/PIM_mark_1`.
-2. Open GitHub **Actions**.
-3. Select **BIFROST | PIM User Eligibility Assignment**.
-4. Select **Run workflow** and choose `feature/PIM_mark_1`.
-5. Keep `deploy_pim` unchecked for validation and What-If only.
-6. Review validation and What-If output.
-7. After verifying the target user, role, scope, duration, and approval, run again with `deploy_pim` checked.
-8. Review the Azure deployment result.
-
-### Workflow safety
-
-- `deploy_pim=false`: validation + What-If preview; no eligibility assignment is created.
-- `deploy_pim=true`: submits the eligibility request to Azure.
-- The workflow fails if the principal ID placeholder is not replaced with a valid GUID.
-- The generated parameter file is temporary and removed at the end of the job.
-- The workflow uses `centralindia` as the deployment location for the subscription deployment metadata. This does not change the subscription scope of the PIM assignment.
-
-## Workflow flow
-
+## Flow
 ```mermaid
 flowchart TD
-    A[input.json: pim_user_1] --> B[Validate request and principal Object ID]
-    B --> C[Build pim.bicep]
-    C --> D[GitHub Actions OIDC login]
-    D --> E[Generate temporary parameters]
-    E --> F{deploy_pim enabled?}
-    F -->|No| G[Subscription What-If]
-    F -->|Yes| H[Create PIM eligibility schedule request]
-    H --> I[Eligible user activates role in Entra PIM]
-    G --> J[Remove temporary parameters]
-    I --> J
+ A[input.json] --> B[Validate approval and IDs]
+ B --> C[Build RBAC Bicep]
+ C --> D[OIDC login]
+ D --> E[What-If preview]
+ E --> F{Deploy enabled?}
+ F -->|No| G[No assignment changes]
+ F -->|Yes| H[Create direct RBAC assignment]
+ G --> I[Optional RBAC access report]
+ H --> I
 ```
 
-## Troubleshooting
+Troubleshooting: [RBAC_TROUBLESHOOTING.md](RBAC_TROUBLESHOOTING.md).
 
-### Invalid principal / PrincipalNotFound
-- Ensure `pim.user.principalId` is the actual Entra user Object ID.
-- Verify the user exists in the tenant associated with `AZURE_TENANT_ID`.
-
-### AuthorizationFailed / insufficient privileges
-- Confirm the GitHub OIDC identity has PIM schedule request permissions at subscription scope.
-- Confirm the role assignment and PIM policies allow the requested Contributor eligibility.
-- Check subscription ID and tenant ID environment variables.
-
-### Federated credential / Azure login failure
-- Verify `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, and `AZURE_SUBSCRIPTION_ID` in `bifrost-env`.
-- Verify federated credential subject matches this repository and GitHub environment.
-- Confirm workflow permissions include `id-token: write`.
-
-### What-If reports errors
-- Validate the principal ID and role definition GUID.
-- Confirm the Bicep module builds successfully.
-- Confirm the caller has permission to read/submit PIM schedule requests.
-
-## Security notes
-
-- Never put client secrets, passwords, or private keys in `input.json`.
-- Confirm request approval and access justification before deployment.
-- Avoid assigning broad roles at subscription scope unless explicitly approved.
-- Review eligible access periodically and remove eligibility when no longer needed.
-- A PIM eligibility request is privileged: use protected GitHub environment approvals and audit Azure activity logs.
-
-## Related links
-
-- [Azure Privileged Identity Management](https://learn.microsoft.com/azure/active-directory/privileged-identity-management/)
-- [Azure role eligibility schedule requests](https://learn.microsoft.com/azure/templates/microsoft.authorization/roleeligibilityschedulerequests)
+## Security
+Never commit credentials. Review role/scope carefully. Direct assignment is active immediately; remove it when no longer needed.
