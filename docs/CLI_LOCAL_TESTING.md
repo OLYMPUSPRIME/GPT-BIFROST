@@ -1,155 +1,101 @@
 # 🧪 BIFROST PIM — Local CLI testing
 
-This guide covers manual Azure CLI testing. Jira integration is not included in this current workflow.
+This guide covers local Azure CLI execution of BIFROST's subscription-scoped Azure Resource PIM eligibility request.
 
-> ⚠️ Use a non-production subscription first. Verify the principal, role, subscription, scope, and duration before submitting.
+> ⚠️ Use a non-production subscription first. The JSON file in the repository is a sample and contains placeholders. Do not submit until the values are populated and reviewed.
 
-## 🔧 Prerequisites
+## Prerequisites
 
-- Azure CLI and Bicep installed.
-- Test subscription with Azure Resource PIM enabled.
-- Permission to create role eligibility schedule requests.
-- Correct principal Object ID and role definition resource ID.
-- Required Bicep parameters available.
-- PowerShell 7 (`pwsh`) available when using the shared runner script.
+- PowerShell 7 (`pwsh`)
+- Azure CLI with Bicep support
+- Azure login to the intended tenant
+- Permission to create Azure Resource PIM role eligibility schedule requests
+- An approved request principal, subscription, and role
 
-## 🔐 Login and select subscription
+## Local setup
 
 ```powershell
 az login
 az account list --output table
-az account set --subscription <SUBSCRIPTION_ID>
-az account show
 az bicep install
-```
-
-> `targetScope = 'subscription'` does not select a subscription. The active Azure CLI context or explicit `--subscription` determines the target.
-
-## 🧱 Compile
-
-```powershell
 az bicep build --file modules/pim/pim.bicep
 ```
 
-## 🔍 Validate deployment
+## Policy-controlled request validation
 
-The policy parameter file is:
+The runner reads two inputs:
 
-```text
-modules/pim/pim-policy-settings.bicepparam
-```
+- `input.json`: requester, role, role definition GUID, subscription, assignment type, duration, justification and ticket fields.
+- `modules/pim/pim-policy-settings.bicepparam`: authoritative policy configuration used by the pre-deployment validator.
 
-The parameter file contains policy configuration intent; it does not necessarily provide all request-specific Bicep parameters. Supply the required parameters from your request input/approved values.
+The runner compiles the policy parameter file with `az bicep build-params`, reads the compiled JSON, and checks the request before Azure deployment:
 
-Example command shape (replace placeholders and provide required parameters):
+1. Requested role must have a matching entry under `azureResourcePimPolicy`.
+2. The policy entry must be enabled.
+3. The role definition GUID in the JSON must exactly match the configured policy GUID.
+4. `assignmentType` must be `Eligible` and this runner currently requires `requestType=AdminAssign`.
+5. Requested eligibility duration must be supported and not exceed `pimAssignmentDefaults.maximumEligibilityDuration`.
+6. Justification must be provided if policy requires it.
+7. Ticket number and ticket system must be provided if policy requires ticket information.
+8. Eligibility must be enabled in defaults.
 
-```powershell
-az deployment sub validate `
-  --subscription <SUBSCRIPTION_ID> `
-  --location <AZURE_REGION> `
-  --template-file modules/pim/pim.bicep `
-  --parameters modules/pim/pim-policy-settings.bicepparam `
-  principalId=<ENTRA_OBJECT_ID> `
-  roleDefinitionId=<FULL_ROLE_DEFINITION_RESOURCE_ID> `
-  requestType=AdminAssign `
-  justification="<BUSINESS_JUSTIFICATION>" `
-  duration=P30D `
-  requestName=<UNIQUE_REQUEST_NAME>
-```
+If any check fails, the script throws a `POLICY DENIED` error and does not invoke the deployment.
 
-⚠️ Check the actual Bicep parameter declarations and parameter-file compatibility before running. Root `input.json` is not automatically parsed or mapped by Azure CLI.
+### Roles currently configured for Azure Resource PIM
 
-## 🚀 Deploy eligibility
+- Owner
+- User Access Administrator
 
-Use the same validated parameters with `az deployment sub create` only after approval and review.
+**Contributor is not configured in the policy file and will be rejected.** Do not add it to the JSON alone. Add an approved role entry with the correct role definition GUID and policy requirements to the policy file first.
 
-This creates **eligibility**, not immediate active access. The user must activate through PIM later, subject to policy.
-
-## 🛡️ Policy implementation status
-
-The policy parameter file records intended policy values. This Bicep template does not apply them. Azure Resource role policies require Azure Authorization API operations; Entra directory-role and PIM Group policies require Microsoft Graph operations. Those writes and verification are not implemented in this branch.
-
-## 🗺️ Testing sequence
-
-```mermaid
-flowchart TD
-  A([🔐 Sign in]) --> B[🎯 Select subscription]
-  B --> C[🧱 Compile Bicep]
-  C --> D[🧾 Populate request parameters]
-  D --> E[🔍 Validate deployment]
-  E --> F{Validation successful?}
-  F -- No --> G[🛠️ Fix input / permissions / scope]
-  G --> C
-  F -- Yes --> H[👀 Review changes and approval]
-  H --> I[🚀 Deploy eligibility]
-  I --> J([✅ Verify eligibility in Azure PIM])
-
-  subgraph LocalTest["🧪 Local test loop"]
-    B
-    C
-    D
-    E
-    F
-    G
-  end
-  subgraph AzureAction["☁️ Controlled deployment"]
-    H
-    I
-    J
-  end
-
-  classDef step fill:#E3F2FD,stroke:#1565C0,color:#0D47A1,stroke-width:2px;
-  classDef decision fill:#FFF3E0,stroke:#EF6C00,color:#E65100,stroke-width:2px;
-  classDef done fill:#E8F5E9,stroke:#2E7D32,color:#1B5E20,stroke-width:2px;
-  class A,B,C,D,E,G,H,I step;
-  class F decision;
-  class J done;
-```
-
-## 🧰 Shared PowerShell runner — local CLI and GitHub Actions
-
-The repository uses **`scripts/Invoke-PimRequest.ps1`** as the request-processing and deployment runner. It is not intended to be a local-only script. The same PowerShell file can be invoked from a developer workstation for local testing or from a GitHub Actions job for controlled automation.
-
-### What the PowerShell runner does
-
-1. Reads the root `input.json` request feeder file.
-2. Validates required request fields and supported scope/request values.
-3. Extracts the subscription, principal Object ID, role, duration, justification, and request type from the JSON input.
-4. Selects the target Azure subscription using Azure CLI (`az account set`).
-5. Builds a temporary `.bicepparam` file that maps request-specific JSON values to the Bicep parameters. The temporary file is removed after execution.
-6. Runs Azure CLI deployment validation and, when not in preview mode, submits the deployment.
-
-This avoids manually copying values from `input.json` into CLI parameters. **Azure CLI does not parse the JSON feeder file by itself**; the PowerShell script performs that mapping.
-
-### Local execution
-
-Run from the repository root after authenticating to Azure CLI:
+## Preview and deployment
 
 ```powershell
-az login
+# Policy checks + parameter generation only; no Azure deployment
 pwsh ./scripts/Invoke-PimRequest.ps1 -WhatIf
-```
 
-Review the request values and generated parameter mapping first. When ready to submit the deployment:
-
-```powershell
+# Policy checks + Azure deployment validation + submit request
 pwsh ./scripts/Invoke-PimRequest.ps1
 ```
 
-`-WhatIf` is the runner's preview mode. It is intended to help inspect the request without submitting the Azure deployment. Azure CLI must be installed and authenticated for normal execution.
+The preview validates against the policy file and creates a temporary `.bicepparam` file, but it does **not** perform Azure-side deployment validation. The temporary file is removed on exit.
 
-### GitHub Actions execution
+To select a different deployment location:
 
-The same script can be called from a workflow after the runner has checked out the repository and the workflow has authenticated to Azure. For example:
-
-```yaml
-- name: Submit PIM request
-  shell: pwsh
-  run: ./scripts/Invoke-PimRequest.ps1
+```powershell
+pwsh ./scripts/Invoke-PimRequest.ps1 -Location centralindia
 ```
 
-Azure authentication should be a separate preceding step, preferably using GitHub Actions OIDC with `azure/login`. The workflow needs appropriate `id-token: write` permission and a federated identity configuration. Do not put Azure credentials or secrets in `input.json`.
+## What is and is not enforced
 
-The workflow runner must have PowerShell (`pwsh`) and Azure CLI installed. A self-hosted Windows agent can run this script as long as those prerequisites are available. The script itself does **not** perform `az login`; it relies on the authenticated Azure CLI session provided locally or by the workflow.
+**Enforced by the current PowerShell pre-deployment validator:** role policy presence/enabled state, role ID matching, eligibility flag, request operation, duration limit, justification and ticket-required checks.
 
-> **Important:** The PowerShell runner is shared by local testing and Actions, but a GitHub Actions workflow has not yet been added in this branch. Azure deployment execution has not yet been verified end-to-end. The script currently submits the Azure Resource PIM eligibility schedule request; policy configuration writes, Entra directory-role PIM, PIM Groups, and Jira integration are separate implementation work.
+**Not implemented by this runner:** writing live Azure PIM role management policy settings; configuring Entra directory-role PIM or PIM for Groups; querying Azure's current PIM policy and comparing it with this file; scope beyond subscription; approval orchestration; ticketing/Jira integration.
+
+MFA, Conditional Access, approval, notifications and activation duration in the parameter file are policy intent. The script reports those fields but does not configure or independently verify live Azure policy. Azure policy settings must be configured separately in Azure and verified before claiming those controls are enforced.
+
+The Bicep template has a required `requestPolicyValidated` parameter constrained to `true`. The runner supplies it only after policy checks. This guardrail helps prevent accidental direct template deployment, but it is not cryptographic proof that the runner was used.
+
+## GitHub Actions
+
+The same runner can be called from GitHub Actions after checkout and Azure authentication (prefer OIDC). Workflow should use `id-token: write`, `azure/login`, and a protected GitHub Environment/approval gate. The workflow is not yet included in this branch.
+
+## Testing sequence
+
+```mermaid
+flowchart TD
+  A([🔐 Login]) --> B[📄 Read input.json]
+  B --> C[🛡️ Compile policy .bicepparam]
+  C --> D[🔎 Match role and role ID]
+  D --> E[⏱️ Check duration, justification and ticket]
+  E --> F{Policy checks pass?}
+  F -->|No| G[❌ Stop — no Azure deployment]
+  F -->|Yes| H[🧾 Generate temporary Bicep params]
+  H --> I[🔍 Azure deployment validation]
+  I --> J[🚀 Create eligibility request]
+  J --> K([🔐 Verify Azure PIM result])
+```
+
+## Scope limitation
+
+`pim.bicep` and this runner currently support **subscription scope only**. Resource Group and individual resource scope are not implemented in this branch.
