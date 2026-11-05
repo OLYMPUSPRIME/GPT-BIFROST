@@ -17,7 +17,8 @@
         "resourceId": ""
       },
       "assignmentType": "Eligible",
-      "requestedDuration": "P30D",
+      "requestType": "AdminAssign",
+      "duration": "P30D",
       "justification": "<BUSINESS_JUSTIFICATION>"
     },
     "requestMetadata": {
