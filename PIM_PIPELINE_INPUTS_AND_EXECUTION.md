@@ -7,7 +7,7 @@ This pipeline creates **Azure PIM role eligibility** at Subscription, Resource G
 - Workflow: `.github/workflows/pim.yml`
 - Input file: `input.json` (repository root)
 - Bicep module: `modules/pim/pim.bicep`
-- GitHub Actions environment: `bifrost-env`
+- GitHub Actions environment: `bifrost-dev`
 - Azure deployment scope: subscription
 - Workflow trigger: **manual only** (`workflow_dispatch`); no push or pull-request trigger is configured.
 
@@ -37,7 +37,8 @@ The workflow checks out the repository and reads `input.json`. The file contains
 |---|---|
 | `request.approved` | Must be `true`; otherwise validation fails. |
 | `request.ticketId` | Request/audit metadata in the input record. |
-| `subscription.name` | Validated against `BIFROST-SC`. |\n| `subscription.subscriptionId` | Target subscription GUID; authoritative input. JSON does not expand `${...}` variables. |
+| `subscription.name` | Validated against `BIFROST-SC`. |
+| `subscription.subscriptionId` | Target subscription GUID; authoritative input. JSON does not expand `${...}` variables. |
 | `pim.enabled` | Must be `true`. |
 | `pim.assignmentType` | Must be `Eligibility`. |
 | `pim.user.alias` | Validated as `pim_user_1`; this is a label, not the Azure identity. |
@@ -45,7 +46,9 @@ The workflow checks out the repository and reads `input.json`. The file contains
 | `pim.user.principalType` | Must be `User`. |
 | `pim.role.roleName` | Human-readable role name (e.g. Contributor). |
 | `pim.role.roleDefinitionId` | Azure built-in/custom role GUID. |
-| `pim.scope.type` | `Subscription`, `ResourceGroup`, or `Resource`. |\n| `pim.scope.resourceGroupName` | Required for ResourceGroup scope. |\n| `pim.scope.resourceId` | Required full ARM resource ID for Resource scope. |
+| `pim.scope.type` | `Subscription`, `ResourceGroup`, or `Resource`. |
+| `pim.scope.resourceGroupName` | Required for ResourceGroup scope. |
+| `pim.scope.resourceId` | Required full ARM resource ID for Resource scope. |
 | `pim.schedule.duration` | Eligibility period in ISO 8601 format (e.g. `P90D`). |
 | `pim.schedule.expirationType` | Must be `AfterDuration`. |
 | `pim.justification` | PIM assignment justification. |
@@ -77,21 +80,20 @@ flowchart TD
     B -->|true| C
     C --> D[Install Azure CLI and Bicep]
     D --> E[Compile modules/pim/pim.bicep]
-    E --> F[Validate input.json and bifrost-env variables]
+    E --> F[Validate input.json and bifrost-dev variables]
     F -->|invalid| X[Stop: validation error]
-    F -->|valid| G[Export values as GitHub step outputs]
-    G --> H[Second job: Azure OIDC login]
-    H --> I[Create temporary pim.parameters.json from input.json]
-    I --> J{deploy_pim true?}
-    J -->|No| K[Azure subscription What-If]
-    J -->|Yes| L[Azure subscription deployment: create PIM eligibility]
-    K --> M[Remove generated parameter file]
-    L --> M
+    F -->|valid| G[Export validated outputs]
+    G --> H{deploy_pim true?}
+    H -->|No| I[Validation-only run]
+    H -->|Yes| J[Azure OIDC login]
+    J --> K[Set subscription from input.json]
+    K --> L[Check target scope read access]
+    L --> M[Submit scope-aware PIM REST request]
 ```
 
 ### Job 1 — Validate and prepare
 
-1. Runs on `ubuntu-latest` in the `bifrost-env` GitHub Environment.
+1. Runs on `ubuntu-latest` in the `bifrost-dev` GitHub Environment.
 2. Checks out the branch that was selected for the manual workflow run.
 3. Checks Azure CLI and installs Bicep.
 4. Compiles `modules/pim/pim.bicep` to catch Bicep syntax/build issues.
@@ -107,13 +109,11 @@ flowchart TD
 3. Authenticates to Azure using `azure/login@v2` and GitHub OIDC:
    - Client ID comes from `vars.AZURE_CLIENT_ID`.
    - Tenant ID and subscription ID come from Job 1 outputs.
-4. Uses `jq` to transform request data from `input.json` into a temporary ARM deployment parameter file named `pim.parameters.json`.
-5. Selects the operation based on the manual `deploy_pim` input:
-   - `false` / not true: `az deployment sub what-if`
-   - `true`: `az deployment sub create`
-6. Removes the generated parameter file even if the previous step fails (`if: always()`).
+4. Sets Azure CLI context to the subscription ID from `input.json`.
+5. Verifies the active subscription and checks read access to the configured scope.
+6. Submits the PIM eligibility REST request at the exact scope path built from `input.json`.
 
-The generated `pim.parameters.json` is not intended to be committed. It is created during the runner execution and deleted at the end.
+There is no PIM What-If preview. The scope read preflight does not prove PIM write permissions; Azure validates those when the request is submitted.
 
 ## 5. Input flow / data mapping
 
@@ -154,8 +154,8 @@ with `requestType: 'AdminAssign'` and an expiration of `AfterDuration`.
 2. Open **Actions → BIFROST | PIM User Eligibility Assignment → Run workflow**.
 3. Select the intended branch (for example, `feature/PIM_mark_1`).
 4. Keep `deploy_pim=false` for a preview run.
-5. Verify the What-If output.
-6. For the actual eligibility creation, rerun manually with `deploy_pim=true` only after approval.
+5. Review validation output (no PIM What-If is performed).
+6. For actual eligibility creation, rerun with `deploy_pim=true` only after approval.
 
 ## 8. Troubleshooting
 
@@ -173,7 +173,9 @@ with `requestType: 'AdminAssign'` and an expiration of `AfterDuration`.
 
 - Never commit secrets, credentials, or access tokens to `input.json`.
 - Use GitHub Environment protection rules/approvals if required for production access.
-- Keep `deploy_pim` defaulted to `false`.\n- `input.json:subscription.subscriptionId` is the authoritative subscription; the GitHub environment variable is not used to choose it.\n- The workflow verifies subscription context and scope read access before making the PIM request.
+- Keep `deploy_pim` defaulted to `false`.
+- `input.json:subscription.subscriptionId` is the authoritative subscription; the GitHub environment variable is not used to choose it.
+- The workflow verifies subscription context and scope read access before making the PIM request.
 - A successful deployment creates **eligibility**, not immediate active Contributor access.
 - The eligible user must activate the role through PIM, subject to tenant activation policy.
 - This workflow is manually triggered only; it does not deploy on push.
