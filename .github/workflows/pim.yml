@@ -91,7 +91,7 @@ jobs:
           require(user["alias"] == "pim_user_1", "Expected user alias pim_user_1.")
           require(user["principalType"] == "User", "This workflow only supports User principals.")
           require(bool(re.fullmatch(guid, principal)), "Replace principalId with the user's Entra Object ID (GUID).")
-          require(bool(re.fullmatch(guid, role["roleDefinitionId"])), "roleDefinitionId must be a role GUID.")
+          require(bool(re.fullmatch(guid, role["roleDefinitionId"])) or role["roleDefinitionId"].startswith("/subscriptions/"), "roleDefinitionId must be a role GUID or full Azure role definition ID.")
           scope = pim["scope"]
           scope_type = scope.get("type", "")
           require(scope_type in ("Subscription", "ResourceGroup", "Resource"), "scope.type must be Subscription, ResourceGroup, or Resource.")
@@ -109,8 +109,8 @@ jobs:
           allowed_types = {"AdminAssign", "AdminUpdate", "AdminRemove", "AdminExtend", "AdminRenew", "SelfActivate", "SelfDeactivate", "SelfExtend", "SelfRenew"}
           require(request_type in allowed_types, "Unsupported PIM requestType.")
           require(request_type == "AdminAssign", "Workflow currently executes AdminAssign. Other request types need existing schedule IDs and/or user-context flow.")
-          require(pim["schedule"]["expirationType"] == "AfterDuration", "Only AfterDuration is supported.")
-          require(pim["schedule"]["duration"].startswith("P"), "Use an ISO 8601 duration such as P90D.")
+          require(pim["schedule"]["expirationType"] in ("AfterDuration", "AfterDateTime", "NoExpiration"), "Unsupported expirationType.")
+          if pim["schedule"]["expirationType"] == "AfterDuration":\n              require(pim["schedule"]["duration"].startswith("P"), "Use an ISO 8601 duration such as P90D.")
 
           request = str(uuid.uuid5(
               uuid.NAMESPACE_URL,
