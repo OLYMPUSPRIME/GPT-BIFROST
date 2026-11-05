@@ -1,0 +1,46 @@
+name: BIFROST RBAC Request
+on:
+  workflow_dispatch:
+    inputs:
+      whatif:
+        description: Validate only; do not create role assignment
+        type: boolean
+        default: true
+        required: true
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Bicep
+        run: az bicep install
+      - name: Build Bicep
+        run: az bicep build --file modules/rbac/main.bicep
+      - name: Validate feeder JSON
+        run: python -c "import json; json.load(open('input.json', encoding='utf-8'))"
+      - name: Install PowerShell
+        uses: powershell/setup-powershell@v2
+      - name: Validate request (dry run)
+        shell: pwsh
+        run: ./scripts/Invoke-RbacRequest.ps1 -WhatIf
+  assign:
+    needs: validate
+    if: ${{ inputs.whatif == false }}
+    runs-on: ubuntu-latest
+    environment: bifrost-dev
+    steps:
+      - uses: actions/checkout@v4
+      - name: Azure login with OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      - name: Install PowerShell
+        uses: powershell/setup-powershell@v2
+      - name: Apply RBAC request
+        shell: pwsh
+        run: ./scripts/Invoke-RbacRequest.ps1
