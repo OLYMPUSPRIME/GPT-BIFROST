@@ -110,7 +110,8 @@ jobs:
           require(request_type in allowed_types, "Unsupported PIM requestType.")
           require(request_type == "AdminAssign", "Workflow currently executes AdminAssign. Other request types need existing schedule IDs and/or user-context flow.")
           require(pim["schedule"]["expirationType"] in ("AfterDuration", "AfterDateTime", "NoExpiration"), "Unsupported expirationType.")
-          if pim["schedule"]["expirationType"] == "AfterDuration":\n              require(pim["schedule"]["duration"].startswith("P"), "Use an ISO 8601 duration such as P90D.")
+          if pim["schedule"]["expirationType"] == "AfterDuration":
+              require(pim["schedule"]["duration"].startswith("P"), "Use an ISO 8601 duration such as P90D.")
 
           request = str(uuid.uuid5(
               uuid.NAMESPACE_URL,
