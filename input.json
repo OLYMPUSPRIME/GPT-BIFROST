@@ -1,24 +1,29 @@
 {
-  "requestor": {
-    "displayName": "<REQUESTOR_DISPLAY_NAME>",
-    "userPrincipalName": "<REQUESTOR_UPN>",
-    "objectId": "<REQUESTOR_ENTRA_OBJECT_ID>"
-  },
-  "accessRequest": {
-    "platform": "AzureResource",
-    "roleName": "Contributor",
-    "roleDefinitionId": "b24988ac-6180-42a0-ab88-20f7382dd24c",
-    "scopeType": "Subscription",
-    "subscriptionId": "<AZURE_SUBSCRIPTION_ID>",
-    "resourceGroupName": "",
-    "resourceId": "",
-    "assignmentType": "Eligible",
-    "duration": "P30D",
-    "justification": "<BUSINESS_JUSTIFICATION>"
-  },
-  "requestMetadata": {
-    "requestReference": "<REQUEST_REFERENCE>",
-    "requestedBy": "<REQUESTER_UPN>",
-    "environment": "dev"
+  "configurationPurpose": "BIFROST Azure PIM access request input. Values in this file describe the person receiving PIM access and the access being requested. They are not PIM activation policy settings; those belong in the PIM .bicepparam file.",
+  "pimAccessRequest": {
+    "requestor": {
+      "displayName": "<REQUESTOR_DISPLAY_NAME>",
+      "userPrincipalName": "<REQUESTOR_UPN>",
+      "entraObjectId": "<REQUESTOR_ENTRA_OBJECT_ID>"
+    },
+    "requestedAccess": {
+      "platform": "AzureResource",
+      "roleName": "Contributor",
+      "roleDefinitionId": "b24988ac-6180-42a0-ab88-20f7382dd24c",
+      "scope": {
+        "type": "Subscription",
+        "subscriptionId": "<AZURE_SUBSCRIPTION_ID>",
+        "resourceGroupName": "",
+        "resourceId": ""
+      },
+      "assignmentType": "Eligible",
+      "requestedDuration": "P30D",
+      "justification": "<BUSINESS_JUSTIFICATION>"
+    },
+    "requestMetadata": {
+      "requestReference": "<REQUEST_REFERENCE>",
+      "requestedBy": "<REQUESTER_UPN>",
+      "environment": "dev"
+    }
   }
 }
