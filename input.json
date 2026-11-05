@@ -28,18 +28,5 @@
       "ticketNumber": "<TICKET_NUMBER>",
       "ticketSystem": "<TICKET_SYSTEM>"
     }
-  },
-  "_guide": {
-    "_note": "This is valid JSON; JSON does not support // or /* */ comments. Use these descriptions to identify field ownership/source.",
-    "pimAccessRequest.requestor": "Basic identity details of the person receiving PIM access. Requester/identity team supplies these.",
-    "pimAccessRequest.requestedAccess": "PIM access request details: target platform, role, scope, eligibility/assignment request type, duration, and business justification. Requester provides the requested role/scope/justification; deployment operator validates IDs and settings.",
-    "pimAccessRequest.requestedAccess.scope": "Target Azure scope. For Subscription scope, provide subscriptionId; for ResourceGroup, provide subscriptionId and resourceGroupName; for Resource, provide resourceId (and the applicable parent scope if required).",
-    "pimAccessRequest.requestMetadata": "Request tracking and contextual metadata.",
-    "pimAccessRequest.requestMetadata.ticketId": "Ticket system's unique internal ID; normally supplied by ticket integration or ticketing system.",
-    "pimAccessRequest.requestMetadata.ticketNumber": "Human-readable ticket number, e.g. INC123456 or REQ123456; supplied by ticket system/requester.",
-    "pimAccessRequest.requestMetadata.ticketSystem": "Ticketing system name, e.g. Jira or ServiceNow; supplied by integration/requester.",
-    "pimAccessRequest.requestMetadata.requestedBy": "UPN of the person submitting/requesting the access.",
-    "pimAccessRequest.requestMetadata.environment": "Environment label used by your team; requester/operator provides it.",
-    "separationOfConcerns": "PIM request values are in pimAccessRequest.requestor and pimAccessRequest.requestedAccess. Ticket-specific values are in pimAccessRequest.requestMetadata.ticketId/ticketNumber/ticketSystem. Policy/activation configuration belongs in modules/pim/pim-request.bicepparam, not this JSON."
   }
 }
