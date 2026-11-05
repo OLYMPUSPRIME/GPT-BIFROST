@@ -1,7 +1,9 @@
 targetScope = 'subscription'
 
-// Creates an Azure Resource PIM eligibility schedule request only.
-// Entra directory role and PIM Group policy writes require Graph API logic.
+// This template submits an Azure Resource PIM eligibility schedule request.
+// The PowerShell runner validates input.json against the compiled policy
+// parameter file before deployment. This parameter is a deployment guardrail,
+// not a replacement for running that validator.
 
 @description('Microsoft Entra Object ID of eligible principal.')
 param principalId string
@@ -16,8 +18,15 @@ param duration string
 param startDateTime string = utcNow('yyyy-MM-ddTHH:mm:ssZ')
 param requestName string
 
-// Desired policy config passed from .bicepparam. The Azure Resource itself
-// below does not apply these policy objects; policy API automation is needed.
+// Required deployment-side guardrail: direct deployment without the runner's
+// successful policy validation is rejected. The runner supplies true only
+// after matching role ID, enabled policy, duration, justification and ticket.
+@allowed([true])
+param requestPolicyValidated bool
+
+// Policy objects are passed as configuration for traceability but are not
+// written to Azure PIM by this eligibility resource. Policy API automation is
+// a separate operation and must be implemented for live policy enforcement.
 param azureResourcePimPolicy object = {}
 param entraRolePimPolicy object = {}
 param groupPimPolicy object = {}
