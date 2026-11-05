@@ -1,100 +1,57 @@
-# BIFROST PIM reusable module — Mark-2
+# BIFROST PIM Mark-2 — standalone Bicep configuration
 
-Mark-2 treats **Jira as the request source**. Jira automation creates the request JSON from the requester's ticket; the requester does not manually prepare a file.
+Jira integration is out of scope. Requester/access inputs and admin policy settings are maintained manually in the Bicep parameter file.
 
-## Jira → pipeline → Azure
+## Files
 
-```mermaid
-flowchart TD
-  U[Requester submits Jira PIM request] --> J[Jira approval workflow]
-  J -->|Approved ticket| G[Jira automation maps fields]
-  G --> F[Generate runtime input.json]
-  F --> P[Securely deliver JSON to pipeline]
-  P --> V[Validate schema and approval]
-  V --> D[PowerShell runner / Azure CLI]
-  D --> B[Bicep: Azure Resource PIM eligibility]
-  B --> R[Capture deployment result]
-  R --> T[Update Jira ticket]
-```
+- modules/pim/pim.bicep — Azure Resource PIM eligibility schedule request at subscription scope.
+- modules/pim/pim-request.bicepparam — request values and policy configuration derived from the screenshots.
 
-**Important:** The generated request file is runtime data. Do not commit real requester data, ticket details, principal IDs, or production requests to Git. Transfer it to the pipeline using a protected artifact/secure integration. The root `input.json` in this repository is a sanitized example/template only.
+## Deployment
 
-## Repository layout
+1. Replace placeholders in pim-request.bicepparam (principal ID, subscription ID, role ID, request reference, approver object IDs).
+2. Login and set the correct subscription:
+   ```powershell
+   az login
+   az account set --subscription <SUBSCRIPTION_ID>
+   ```
+3. Compile:
+   ```powershell
+   az bicep build --file modules/pim/pim.bicep
+   ```
+4. Validate:
+   ```powershell
+   az deployment sub validate --location eastus --template-file modules/pim/pim.bicep --parameters modules/pim/pim-request.bicepparam
+   ```
+5. Deploy only after review:
+   ```powershell
+   az deployment sub create --location eastus --template-file modules/pim/pim.bicep --parameters modules/pim/pim-request.bicepparam
+   ```
 
-```text
-input.json                         # Sanitized example, not a live ticket
-schemas/pim-request.schema.json    # Request contract for Jira mapping
-scripts/Invoke-PimRequest.ps1      # Validate + dry-run/execute Azure Resource PIM
-modules/pim/
-├── README.md
-├── CLI_LOCAL_TESTING.md
-├── pim.bicep
-└── policies/
-    └── pim-policy-settings.json  # Administrator-owned policy intent
-```
+This creates eligible access, not instant activation.
 
-## Request contract
+## Policy settings from supplied screenshots
 
-Jira automation populates `input.json` using the fields in `schemas/pim-request.schema.json`:
+| Area | Role | Configuration intent |
+|---|---|---|
+| Azure Resource PIM | Owner | MFA, Conditional Access, approval by another subscription owner, notifications, 1h |
+| Azure Resource PIM | User Access Administrator | MFA, CA, no approval, notifications, 1h |
+| Entra role PIM | Global Administrator | MFA, CA, approval by another Global Administrator, notifications, 1h |
+| Entra role PIM | Exchange Administrator | MFA, CA, no approval, notifications, 2h |
+| PIM for Groups | Owner | MFA, CA, approval by another group owner, notifications, 1h |
+| PIM for Groups | Member | MFA, CA, no approval, notifications, 5h |
 
-- Jira ticket ID, requester, approval status, environment, justification
-- Azure subscription ID
-- Target platform, principal object ID, role, scope
-- Assignment type, start date, expiration/duration
+Assignment defaults: eligible preferred, maximum eligibility P90D, justification and ticket reference required, permanent eligible/active assignments disabled.
 
-Request data must **not** set or bypass tenant security policy (MFA, Conditional Access, approval requirements, approvers, maximum activation duration, notification controls).
+## Important capability boundary
 
-## Local CLI flow (Azure Resource PIM)
+The parameter file contains the settings, but the current Bicep resource only creates Azure Resource PIM eligibility. It does **not** apply the activation-policy values.
 
-1. Download/receive the approved Jira-generated JSON as a secure runtime file.
-2. Authenticate with Azure CLI and select/verify the intended tenant/subscription.
-3. Run the PowerShell script in dry-run mode.
-4. Review ticket, identity, role, scope, and duration.
-5. Execute only after approval and review.
+Policy changes require platform-specific API implementation:
+- Azure Resource PIM: Azure Authorization role management policy API.
+- Entra directory roles: Microsoft Graph role management policy API.
+- PIM for Groups: Microsoft Graph group role management policy API.
 
-Dry run (no write):
-```powershell
-pwsh ./scripts/Invoke-PimRequest.ps1 -InputJsonPath ./input.json -DeploymentLocation eastus
-```
+The current branch does not yet automate policy writes or verification. Entra role PIM, PIM for Groups, Azure RG/resource assignment, and active assignment/activation are not yet implemented here. Do not assume settings were enforced just because the eligibility deployment succeeded.
 
-Execute:
-```powershell
-pwsh ./scripts/Invoke-PimRequest.ps1 -InputJsonPath ./input.json -DeploymentLocation eastus -Execute -WhatIf
-```
-
-Remove `-WhatIf` only when the Azure operation is intended and the request is approved:
-```powershell
-pwsh ./scripts/Invoke-PimRequest.ps1 -InputJsonPath ./input.json -DeploymentLocation eastus -Execute
-```
-
-The script checks Jira approval, platform, assignment type, and current Bicep scope support. It currently supports **Azure Resource PIM eligible subscription assignment**. It does not perform active assignment activation.
-
-## Scope/platform support matrix
-
-| Jira request platform/scope | Status in Mark-2 |
-|---|---|
-| Azure Resource PIM — subscription eligible | Bicep runner supports this |
-| Azure Resource PIM — resource group/resource | Not yet implemented in this runner; use separately validated ARM Authorization REST scope runner |
-| Entra directory-role PIM | Not automated; Microsoft Graph implementation required |
-| PIM for Groups | Not automated; Microsoft Graph implementation required |
-| Active assignment / activation | Not enabled by this runner |
-
-Azure Resource PIM, Entra directory-role PIM, and PIM for Groups use distinct APIs. Do not treat a single Bicep module as if it deploys all three.
-
-## Security and operational notes
-
-- Jira approval must be complete before the pipeline's privileged stage.
-- Use least-privilege service connections and workload identity federation where possible.
-- Never allow request fields to override policy settings.
-- Prefer eligible access over permanent active access.
-- Keep real JSON payloads out of source control and logs.
-- A successful eligibility assignment does not activate the role immediately; the user must activate it under the tenant's PIM policy.
-- Test in a non-production subscription first.
-
-## Administrator policy configuration
-
-`modules/pim/policies/pim-policy-settings.json` records policy intent based on the supplied examples. It is not a native ARM/Graph request payload and is not automatically applied by the current runner. Tenant policy application is a separate, admin-controlled implementation.
-
-## CLI validation
-
-See [CLI_LOCAL_TESTING.md](./CLI_LOCAL_TESTING.md) for detailed Azure CLI REST and Graph read-only exploration steps.
+Test in a non-production tenant/subscription first.
