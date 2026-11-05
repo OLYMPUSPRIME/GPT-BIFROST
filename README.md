@@ -1,50 +1,59 @@
-# BIFROST — Azure RBAC
+# BIFROST — Azure RBAC Access Assignment
 
-This branch (`feature/RBAC_mark_2`) implements request-driven Azure RBAC assignment, patterned after the PIM branch's input/runner/docs approach.
+Branch: feature/RBAC_mark_2
 
-## Supported scopes
+## Scope and responsibility
 
-- **Subscription:** assign access at subscription scope.
-- **ResourceGroup:** assign access within one named resource group.
-- **Resource:** assign access at one exact ARM resource ID.
+This branch contains an RBAC-only access assignment workflow. Target infrastructure (VMs, resource groups, storage, networking, Key Vault, etc.) is provisioned by other modules or already exists.
 
-The runner does not silently broaden the requested scope.
+The RBAC workflow:
+- Reads the exact target scope from input.json.
+- Validates the request and checks that the selected existing resource/resource group is present.
+- Creates only an Azure Microsoft.Authorization/roleAssignments access grant.
+- Does not create or modify target infrastructure.
+- Never falls back to a broader scope if the requested scope fails.
+
+## Scope choices
+
+- Subscription: existing subscription.
+- ResourceGroup: existing resource group.
+- Resource: existing individual Azure resource using its full ARM resource ID.
 
 ## Repository layout
 
-- `input.json` — JSON request feeder
-- `scripts/Invoke-RbacRequest.ps1` — request validation and Azure CLI execution
-- `modules/rbac/main.bicep` — Bicep entrypoint for subscription and RG
-- `modules/rbac/subscription/rbac-subscription.bicep` — subscription module
-- `modules/rbac/resourceGroup/rbac-resource-group.bicep` — RG module
-- `modules/rbac/resource/rbac-resource.bicep` — resource-scope helper
-- `.github/workflows/rbac-request.yml` — validation/apply workflow
-- `docs/RBAC_REQUEST_FLOW.md` — workflow diagram
-- `AZURE_BUILTIN_RBAC_ROLE_IDS.md` — role GUID reference
+- input.json — JSON request feeder.
+- scripts/Invoke-RbacRequest.ps1 — validation and exact-scope Azure CLI role assignment.
+- modules/rbac/main.bicep — Bicep entrypoint for subscription/RG assignment.
+- modules/rbac/subscription/rbac-subscription.bicep — subscription role assignment.
+- modules/rbac/resourceGroup/rbac-resource-group.bicep — RG role assignment.
+- modules/rbac/resource/rbac-resource.bicep — resource-scope input/helper.
+- .github/workflows/rbac-request.yml — validation and optional assignment workflow.
+- docs/RBAC_REQUEST_FLOW.md — process diagram.
+- docs/RBAC_TROUBLESHOOTING.md — test issue log, to populate after testing.
 
-## Local use
+## Local execution
 
-Prerequisites: Azure CLI, Bicep, PowerShell 7, and role-assignment permissions.
+1. Update placeholders in input.json with approved values.
+2. Choose scopeLevel:
+   - Subscription: leave RG/resource fields blank.
+   - ResourceGroup: provide existing resourceGroupName.
+   - Resource: provide full existing resourceId.
+3. Validate:
 
-1. Replace placeholders in `input.json` with approved tenant/subscription, principal object ID, role and scope values.
-2. For ResourceGroup, set `resourceGroupName`.
-3. For Resource, set the full `resourceId` ARM ID.
-4. Run:
+    az login
+    az account set --subscription '<subscription-id>'
+    az bicep install
+    az bicep build --file modules/rbac/main.bicep
+    pwsh ./scripts/Invoke-RbacRequest.ps1 -WhatIf
 
-```powershell
-az login
-az account set --subscription '<subscription-id>'
-az bicep install
-az bicep build --file modules/rbac/main.bicep
-pwsh ./scripts/Invoke-RbacRequest.ps1 -WhatIf
-```
+4. After review and approval, execute:
 
-After review and approval, run `pwsh ./scripts/Invoke-RbacRequest.ps1` to grant access.
+    pwsh ./scripts/Invoke-RbacRequest.ps1
 
 ## GitHub Actions
 
-Workflow `.github/workflows/rbac-request.yml` validates first. It applies only when workflow input `whatif=false`, uses OIDC, and expects repository secrets `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`. Configure GitHub environment `bifrost-dev` with required reviewers.
+Workflow .github/workflows/rbac-request.yml validates first and applies only when whatif=false. It uses OIDC and GitHub secrets AZURE_CLIENT_ID, AZURE_TENANT_ID, and AZURE_SUBSCRIPTION_ID. Configure the bifrost-dev GitHub environment with required reviewers.
 
 ## RBAC vs PIM
 
-RBAC assignments grant active access immediately. PIM eligibility is separate and requires activation.
+RBAC assignments grant active access immediately. PIM eligibility/activation is separate and is not part of this branch.
