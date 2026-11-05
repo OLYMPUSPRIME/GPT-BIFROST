@@ -123,9 +123,9 @@ jobs:
               f.write(f"principal_id={principal}\n")
               f.write(f"role_definition_id={role['roleDefinitionId']}\n")
               f.write(f"request_name={request}\n")
-              f.write(f"scope_id={scope_id}\\n")
-              f.write(f"scope_type={scope_type}\\n")
-              f.write(f"request_type={request_type}\\n")
+              f.write(f"scope_id={scope_id}\n")
+              f.write(f"scope_type={scope_type}\n")
+              f.write(f"request_type={request_type}\n")
           PY
 
   what_if:
