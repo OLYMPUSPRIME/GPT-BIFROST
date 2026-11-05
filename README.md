@@ -8,7 +8,7 @@
 - Reads the PIM request from root `input.json`.
 - Uses GitHub Actions OIDC to authenticate to Azure.
 - Builds and validates the PIM Bicep module.
-- Runs a subscription-level What-If preview by default.
+- Validates input and can submit a PIM eligibility request at Subscription, Resource Group, or Resource scope.
 - Creates a PIM eligibility schedule request only when `deploy_pim` is explicitly enabled.
 - Assigns eligibility to the configured user (sample alias: `pim_user_1`) for the selected role and duration.
 
@@ -65,13 +65,13 @@ The alias `pim_user_1` does not automatically create a user in Entra ID and is n
 | JSON property | Description |
 |---|---|
 | `request.approved` | Must be `true`; represents request approval in this sample. |
-| `subscription.name` | Subscription guardrail; currently `BIFROST-SC`. |
+| `subscription.name` | Subscription guardrail; currently `BIFROST-SC`. |\n| `subscription.subscriptionId` | Target subscription GUID. This is read from `input.json`, not GitHub vars. |
 | `pim.enabled` | Enables PIM configuration. |
 | `pim.assignmentType` | Currently supports `Eligibility`. |
 | `pim.user.principalId` | Entra Object ID of the user. |
 | `pim.role.roleName` | Human-readable role name. |
 | `pim.role.roleDefinitionId` | Azure role definition GUID. |
-| `pim.scope.type` | Currently `Subscription`. |
+| `pim.scope.type` | `Subscription`, `ResourceGroup`, or `Resource`. |
 | `pim.schedule.duration` | ISO 8601 duration; sample `P90D` (90 days). |
 | `pim.justification` | Business reason for the access request. |
 | `pim.ticketInfo.ticketNumber` | Request/ticket reference. |
@@ -96,7 +96,7 @@ Configure the GitHub repository environment named **`bifrost-env`**:
 | `AZURE_TENANT_ID` | Yes | Entra tenant ID. |
 | `AZURE_SUBSCRIPTION_ID` | Yes | Target subscription ID for BIFROST-SC. |
 
-The workflow uses the GitHub Environment variables through `vars.*`. Configure the federated credential to trust the repository and the appropriate GitHub environment. Do not store client secrets when OIDC is available.
+`AZURE_CLIENT_ID` and `AZURE_TENANT_ID` are read from the GitHub Environment. The target subscription ID comes from `input.json:subscription.subscriptionId`; `AZURE_SUBSCRIPTION_ID` is not used to override it. Configure the federated credential to trust the repository and GitHub environment. Do not store client secrets when OIDC is available.
 
 ## Azure permissions
 
@@ -123,7 +123,7 @@ The user creating eligibility should be authorized to assign the requested role 
 - `deploy_pim=true`: submits the eligibility request to Azure.
 - The workflow fails if the principal ID placeholder is not replaced with a valid GUID.
 - The generated parameter file is temporary and removed at the end of the job.
-- The workflow uses `centralindia` as the deployment location for the subscription deployment metadata. This does not change the subscription scope of the PIM assignment.
+- The PIM request is submitted using Azure Resource Manager REST at the selected scope. The Bicep module remains subscription-targeted and is compiled for syntax validation; it is not used to create the RG/resource scope request. There is no PIM What-If preview for this REST operation.
 
 ## Workflow flow
 
@@ -174,3 +174,20 @@ flowchart TD
 
 - [Azure Privileged Identity Management](https://learn.microsoft.com/azure/active-directory/privileged-identity-management/)
 - [Azure role eligibility schedule requests](https://learn.microsoft.com/azure/templates/microsoft.authorization/roleeligibilityschedulerequests)
+
+
+## Scope-aware PIM access
+
+The root `input.json` defines both the target subscription and scope:
+
+- **Subscription:** `pim.scope.type = "Subscription"`
+- **Resource Group:** `pim.scope.type = "ResourceGroup"` plus `pim.scope.resourceGroupName`
+- **Resource:** `pim.scope.type = "Resource"` plus the full `pim.scope.resourceId`
+
+Set `subscription.subscriptionId` to a real subscription GUID in the JSON. JSON does not expand shell variables such as `${AZURE_SUBSCRIPTION_ID}`. The workflow passes this ID to Azure Login and verifies it with `az account show` after setting the CLI context.
+
+The GitHub Environment `bifrost-dev` is used for OIDC identity variables:
+- `AZURE_CLIENT_ID`
+- `AZURE_TENANT_ID`
+
+The scope preflight checks ARM read access to the configured target. PIM write authorization is checked by Azure when the REST request is submitted. For detailed examples and CLI testing, see [PIM_PIPELINE_INPUTS_AND_EXECUTION.md](PIM_PIPELINE_INPUTS_AND_EXECUTION.md).
