@@ -4,11 +4,6 @@ name: PIM Mark-1
 on:
   workflow_dispatch:
     inputs:
-      run_what_if:
-        description: 'Run PIM What-If preview (requires PIM licensing/onboarding)'
-        type: boolean
-        required: true
-        default: false
       deploy_pim:
         description: 'Create the PIM eligibility request'
         type: boolean
@@ -53,7 +48,6 @@ jobs:
       - name: Validate input.json and prepare outputs
         id: config
         env:
-          AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
           AZURE_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
         shell: bash
         run: |
@@ -72,7 +66,7 @@ jobs:
           pim = c["pim"]
           user = pim["user"]
           role = pim["role"]
-          sub = os.environ.get("AZURE_SUBSCRIPTION_ID", "")
+          sub = c["subscription"].get("subscriptionId", "").strip()
           tenant = os.environ.get("AZURE_TENANT_ID", "")
           principal = user["principalId"]
 
@@ -84,14 +78,14 @@ jobs:
 
           require(c["request"]["approved"] is True, "Request must be approved in input.json.")
           require(c["subscription"]["name"] == "BIFROST-SC", "Only BIFROST-SC is allowed for this branch.")
-          require(bool(re.fullmatch(guid, sub)), "Set valid AZURE_SUBSCRIPTION_ID in GitHub environment bifrost-dev.")
+          require(bool(re.fullmatch(guid, sub)), "Set subscription.subscriptionId in input.json to a valid GUID (JSON does not expand environment variables).")
           require(bool(re.fullmatch(guid, tenant)), "Set valid AZURE_TENANT_ID in GitHub environment bifrost-dev.")
           require(pim["enabled"] is True, "pim.enabled must be true.")
           require(pim["assignmentType"] == "Eligibility", "This workflow only supports PIM eligibility.")
           require(user["alias"] == "pim_user_1", "Expected user alias pim_user_1.")
           require(user["principalType"] == "User", "This workflow only supports User principals.")
           require(bool(re.fullmatch(guid, principal)), "Replace principalId with the user's Entra Object ID (GUID).")
-          require(bool(re.fullmatch(guid, role["roleDefinitionId"])) or role["roleDefinitionId"].startswith("/subscriptions/"), "roleDefinitionId must be a role GUID or full Azure role definition ID.")
+          require(bool(re.fullmatch(guid, role["roleDefinitionId"].strip())) or (role["roleDefinitionId"].strip().startswith("/") and "/providers/Microsoft.Authorization/roleDefinitions/" in role["roleDefinitionId"]), "roleDefinitionId must be a role GUID or full Azure role definition ID.")
           scope = pim["scope"]
           scope_type = scope.get("type", "")
           require(scope_type in ("Subscription", "ResourceGroup", "Resource"), "scope.type must be Subscription, ResourceGroup, or Resource.")
@@ -103,7 +97,7 @@ jobs:
               scope_id = f"/subscriptions/{sub}/resourceGroups/{rg_name}"
           else:
               scope_id = scope.get("resourceId", "")
-              require(scope_id.startswith(f"/subscriptions/{sub}/resourceGroups/") and "/providers/" in scope_id, "scope.resourceId must be a full resource ID inside the configured subscription.")
+              require(scope_id.startswith(f"/subscriptions/{sub}/") and "/providers/" in scope_id and scope_id.count("/") >= 8, "scope.resourceId must be a full ARM resource ID inside the configured subscription.")
 
           request_type = pim.get("requestType", "AdminAssign")
           allowed_types = {"AdminAssign", "AdminUpdate", "AdminRemove", "AdminExtend", "AdminRenew", "SelfActivate", "SelfDeactivate", "SelfExtend", "SelfRenew"}
@@ -129,58 +123,8 @@ jobs:
               f.write(f"request_type={request_type}\n")
           PY
 
-  what_if:
-    name: 02 - PIM What-If preview
-    needs: validate
-    if: ${{ inputs.run_what_if == true }}
-    runs-on: ubuntu-latest
-    environment: bifrost-dev
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Azure OIDC login
-        uses: azure/login@v2
-        with:
-          client-id: ${{ vars.AZURE_CLIENT_ID }}
-          tenant-id: ${{ needs.validate.outputs.tenant_id }}
-          subscription-id: ${{ needs.validate.outputs.subscription_id }}
-
-      - name: Install Bicep
-        run: az bicep install
-
-      - name: Generate PIM parameters
-        env:
-          AZURE_SUBSCRIPTION_ID: ${{ needs.validate.outputs.subscription_id }}
-          PRINCIPAL_ID: ${{ needs.validate.outputs.principal_id }}
-          ROLE_DEFINITION_ID: ${{ needs.validate.outputs.role_definition_id }}
-          REQUEST_NAME: ${{ needs.validate.outputs.request_name }}
-        run: |
-          set -euo pipefail
-          jq --arg principal "$PRINCIPAL_ID" \
-             --arg role "/subscriptions/$AZURE_SUBSCRIPTION_ID/providers/Microsoft.Authorization/roleDefinitions/$ROLE_DEFINITION_ID" \
-             --arg request "$REQUEST_NAME" \
-             '{ "$schema":"https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#", contentVersion:"1.0.0.0", parameters: {
-                principalId:{value:$principal}, roleDefinitionId:{value:$role},
-                justification:{value:.pim.justification}, duration:{value:.pim.schedule.duration},
-                requestName:{value:$request}, ticketNumber:{value:.pim.ticketInfo.ticketNumber},
-                ticketSystem:{value:.pim.ticketInfo.ticketSystem}
-              }}' input.json > pim.parameters.json
-
-      - name: Run PIM What-If
-        run: |
-          az deployment sub what-if \
-            --name "BIFROST-PIM-WhatIf-${{ github.run_number }}" \
-            --location "centralindia" \
-            --template-file modules/pim/pim.bicep \
-            --parameters @pim.parameters.json \
-            --output json
-
-      - name: Clean generated parameter file
-        if: always()
-        run: rm -f pim.parameters.json
-
   create_pim:
-    name: 03 - Create PIM eligibility access
+    name: 02 - Create PIM eligibility access
     needs: validate
     if: ${{ inputs.deploy_pim == true }}
     runs-on: ubuntu-latest
@@ -195,26 +139,22 @@ jobs:
           tenant-id: ${{ needs.validate.outputs.tenant_id }}
           subscription-id: ${{ needs.validate.outputs.subscription_id }}
 
-      - name: Install Bicep
-        run: az bicep install
-
-      - name: Generate PIM parameters
+      - name: Verify subscription context and target scope access
         env:
-          AZURE_SUBSCRIPTION_ID: ${{ needs.validate.outputs.subscription_id }}
-          PRINCIPAL_ID: ${{ needs.validate.outputs.principal_id }}
-          ROLE_DEFINITION_ID: ${{ needs.validate.outputs.role_definition_id }}
-          REQUEST_NAME: ${{ needs.validate.outputs.request_name }}
+          TARGET_SUBSCRIPTION_ID: ${{ needs.validate.outputs.subscription_id }}
+          TARGET_SCOPE_ID: ${{ needs.validate.outputs.scope_id }}
+        shell: bash
         run: |
           set -euo pipefail
-          jq --arg principal "$PRINCIPAL_ID" \
-             --arg role "/subscriptions/$AZURE_SUBSCRIPTION_ID/providers/Microsoft.Authorization/roleDefinitions/$ROLE_DEFINITION_ID" \
-             --arg request "$REQUEST_NAME" \
-             '{ "$schema":"https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#", contentVersion:"1.0.0.0", parameters: {
-                principalId:{value:$principal}, roleDefinitionId:{value:$role},
-                justification:{value:.pim.justification}, duration:{value:.pim.schedule.duration},
-                requestName:{value:$request}, ticketNumber:{value:.pim.ticketInfo.ticketNumber},
-                ticketSystem:{value:.pim.ticketInfo.ticketSystem}
-              }}' input.json > pim.parameters.json
+          az account set --subscription "$TARGET_SUBSCRIPTION_ID"
+          ACTIVE_SUB="$(az account show --query id --output tsv)"
+          if [[ "${ACTIVE_SUB,,}" != "${TARGET_SUBSCRIPTION_ID,,}" ]]; then
+            echo "Azure CLI context does not match subscription.subscriptionId from input.json." >&2
+            exit 1
+          fi
+          echo "Authenticated subscription context: $ACTIVE_SUB"
+          az role assignment list --scope "$TARGET_SCOPE_ID" --include-inherited --all --output none
+          echo "Target scope is readable by the authenticated GitHub OIDC identity."
 
       - name: Submit PIM eligibility request at selected scope
         env:
@@ -256,13 +196,9 @@ jobs:
           subprocess.run(["az", "rest", "--method", "put", "--url", url, "--body", json.dumps(body), "--output", "json"], check=True)
           PY
 
-      - name: Clean generated parameter file
-        if: always()
-        run: rm -f pim.parameters.json
-
   access_report:
     name: 04 - View user details and Azure access
-    needs: [validate, what_if, create_pim]
+    needs: [validate, create_pim]
     if: ${{ always() && needs.validate.result == 'success' && inputs.view_access == true }}
     runs-on: ubuntu-latest
     environment: bifrost-dev
@@ -279,6 +215,7 @@ jobs:
       - name: Collect user details and Azure access
         env:
           AZURE_SUBSCRIPTION_ID: ${{ needs.validate.outputs.subscription_id }}
+          TARGET_SCOPE_ID: ${{ needs.validate.outputs.scope_id }}
           PRINCIPAL_ID: ${{ needs.validate.outputs.principal_id }}
         shell: bash
         run: |
@@ -303,7 +240,7 @@ jobs:
             --output json > access-report/active-role-assignments.json
 
           # Collect PIM eligible role assignment instances. This can fail if PIM is unlicensed/unavailable.
-          PIM_URL="https://management.azure.com/subscriptions/$AZURE_SUBSCRIPTION_ID/providers/Microsoft.Authorization/roleEligibilityScheduleInstances?api-version=2020-10-01&\$filter=principalId%20eq%20%27$PRINCIPAL_ID%27"
+          PIM_URL="https://management.azure.com$TARGET_SCOPE_ID/providers/Microsoft.Authorization/roleEligibilityScheduleInstances?api-version=2020-10-01&\$filter=principalId%20eq%20%27$PRINCIPAL_ID%27"
           if az rest --method get --url "$PIM_URL" --output json > access-report/pim-eligible-assignments.json 2>access-report/pim-eligible-error.txt; then
             echo "PIM eligibility data collected."
           else
@@ -314,6 +251,7 @@ jobs:
             echo "## BIFROST PIM Access Report"
             echo ""
             echo "- **Subscription:** $AZURE_SUBSCRIPTION_ID"
+            echo "- **Scope:** $TARGET_SCOPE_ID"
             echo "- **Target Entra Object ID:** $PRINCIPAL_ID"
             echo "- **Generated (UTC):** $(date -u '+%Y-%m-%d %H:%M:%S')"
             echo ""
