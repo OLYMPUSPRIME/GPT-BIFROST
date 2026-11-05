@@ -70,7 +70,7 @@ if ($duration -notin $allowedDurations) { throw "Unsupported duration '$duration
 if ($roleGuid -notmatch '^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$') { throw "roleDefinitionId must be a role definition GUID, not a full resource ID. Got '$roleGuid'." }
 
 # Compile the Bicep parameter file so validation uses the actual declared policy values.
-$compiledPolicyFile = Join-Path $env:TEMP ("bifrost-policy-{0}.json" -f ([guid]::NewGuid().ToString('N')))
+$compiledPolicyFile = Join-Path ([System.IO.Path]::GetTempPath()) ("bifrost-policy-{0}.json" -f ([guid]::NewGuid().ToString('N')))
 try {
     Invoke-AzChecked @('bicep','build-params','--file',$PolicyParameterFile,'--outfile',$compiledPolicyFile) 'Compile PIM policy parameter file'
     $compiledPolicy = Get-Content -LiteralPath $compiledPolicyFile -Raw | ConvertFrom-Json
@@ -91,15 +91,10 @@ foreach ($property in $azureRolePolicies.PSObject.Properties) {
         break
     }
 }
-if ($null -eq $rolePolicy) {
-    throw "POLICY DENIED: Role '$roleName' is not defined in azureResourcePimPolicy. Add an approved role policy entry before requesting access. No deployment was submitted."
-}
+if ($null -eq $rolePolicy) { throw "POLICY DENIED: Role '$roleName' is not defined in azureResourcePimPolicy. Add an approved role policy entry before requesting access. No deployment was submitted." }
 if ($rolePolicy.enabled -ne $true) { throw "POLICY DENIED: Role policy '$matchedPolicyName' is not enabled." }
-if ([string]$rolePolicy.roleDefinitionId -ne $roleGuid) {
-    throw "POLICY DENIED: Role '$roleName' roleDefinitionId '$roleGuid' does not match policy ID '$($rolePolicy.roleDefinitionId)'."
-}
+if ([string]$rolePolicy.roleDefinitionId -ne $roleGuid) { throw "POLICY DENIED: Role '$roleName' roleDefinitionId '$roleGuid' does not match policy ID '$($rolePolicy.roleDefinitionId)'." }
 if ($assignmentDefaults.eligibleByDefault -ne $true) { throw 'POLICY DENIED: Policy defaults do not permit eligible assignments.' }
-if ($assignmentDefaults.allowPermanentEligible -eq $false -and [string]::IsNullOrWhiteSpace($duration)) { throw 'POLICY DENIED: Permanent eligibility is disabled; duration is required.' }
 if ((ConvertTo-DurationSeconds $duration) -gt (ConvertTo-DurationSeconds ([string]$assignmentDefaults.maximumEligibilityDuration))) {
     throw "POLICY DENIED: Requested duration '$duration' exceeds maximum '$($assignmentDefaults.maximumEligibilityDuration)'."
 }
@@ -115,7 +110,7 @@ Write-Host "POLICY PASSED: '$roleName' matched policy '$matchedPolicyName'." -Fo
 Write-Host "Policy maximum eligibility duration: $($assignmentDefaults.maximumEligibilityDuration)"
 Write-Host "Requested eligibility duration: $duration"
 Write-Host "Policy requires MFA: $($rolePolicy.requireMfa); Conditional Access: $($rolePolicy.requireConditionalAccess); approval: $($rolePolicy.requireApproval)."
-Write-Warning 'MFA, Conditional Access, approval and activation-duration values are reported from policy intent; this script does not configure or independently verify the live Azure PIM policy.'
+Write-Warning 'MFA, Conditional Access, approval, notifications and activation-duration values are policy intent only; this script does not configure or independently verify live Azure PIM policy.'
 
 $roleDefinitionResourceId = "/subscriptions/$subscriptionId/providers/Microsoft.Authorization/roleDefinitions/$roleGuid"
 $deploymentName = "bifrostPimEligibility$(Get-Date -Format 'yyyyMMddHHmmss')"
