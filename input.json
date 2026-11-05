@@ -22,9 +22,11 @@
       "justification": "<BUSINESS_JUSTIFICATION>"
     },
     "requestMetadata": {
-      "requestReference": "<REQUEST_REFERENCE>",
       "requestedBy": "<REQUESTER_UPN>",
-      "environment": "dev"
+      "environment": "dev",
+      "ticketId": "<TICKET_ID>",
+      "ticketNumber": "<TICKET_NUMBER>",
+      "ticketSystem": "<TICKET_SYSTEM>"
     }
   }
 }
