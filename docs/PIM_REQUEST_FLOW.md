@@ -1,165 +1,89 @@
-# BIFROST PIM Request Flow — Input JSON to Azure Deployment
+# BIFROST PIM Request Flow — Policy Validation and Azure Deployment
 
-> **Status:** Implementation guide for the request runner. The runner submits an Azure Resource PIM *eligibility schedule request*. It does **not** configure PIM activation policy settings.
+> **Current scope:** Azure Resource PIM eligible assignment at subscription scope. The runner validates request data against the compiled policy parameter file. It does not yet configure or independently verify the live Azure PIM policy.
 
-## 🎯 Purpose
+## Responsibility separation
 
-This closes the request-data wiring gap by separating:
-- **Request data** — who gets access, role, subscription scope, duration, justification, and ticket metadata in root `input.json`.
-- **Policy configuration** — PIM policy intent in `modules/pim/pim-policy-settings.bicepparam`.
-- **Deployment logic** — reusable Azure Resource PIM eligibility resource in `modules/pim/pim.bicep`.
-- **Orchestration** — PowerShell runner in `scripts/Invoke-PimRequest.ps1`.
+- **Request data:** root `input.json` describes the requester, role, scope, duration, justification and ticket.
+- **Policy intent:** `modules/pim/pim-policy-settings.bicepparam` defines the approved Azure Resource role policy entries and assignment defaults.
+- **Policy validation:** `scripts/Invoke-PimRequest.ps1` compiles the policy file to JSON and validates the request against it.
+- **Eligibility resource:** `modules/pim/pim.bicep` creates the role eligibility schedule request only after the runner passes validation.
 
-## 🧭 Architecture
+## Flow
 
 ```mermaid
 flowchart TD
-  A[📄 Root input.json] --> B[🛠️ PowerShell runner]
-  B --> C{🔎 Validate request}
-  C -->|Invalid| X[❌ Stop with validation error]
-  C -->|Valid| D[🔐 Set Azure subscription]
-  D --> E[🧩 Read PIM policy parameter file]
-  E --> F[📝 Generate temporary .bicepparam]
-  F --> G[✅ az deployment sub validate]
-  G --> H[🚀 az deployment sub create]
-  H --> I[📬 Azure PIM eligibility schedule request]
-  I --> J[📤 Deployment outputs/status]
-  
-  subgraph Configurations
-    A
-    E
-  end
-  subgraph Execution
-    B
-    C
-    D
-    F
-    G
-    H
-  end
+  A[Root input.json] --> C[Invoke-PimRequest.ps1]
+  B[pim-policy-settings.bicepparam] --> D[az bicep build-params]
+  D --> C
+  C --> E{Role policy exists and enabled?}
+  E -->|No| X[Reject — no deployment]
+  E -->|Yes| F{Role ID matches?}
+  F -->|No| X
+  F -->|Yes| G[Validate assignment, duration, justification, ticket]
+  G --> H{Policy checks pass?}
+  H -->|No| X
+  H -->|Yes| I[Generate temporary .bicepparam]
+  I --> J[Azure CLI deployment validate]
+  J --> K[Azure CLI deployment create]
+  K --> L[Azure Resource PIM eligibility schedule request]
 ```
 
-## 📁 File responsibilities
+## Role policy matching
 
-| File | Responsibility |
-|---|---|
-| `input.json` | Requestor, access role, scope, request type, duration, justification, ticket metadata |
-| `modules/pim/pim-policy-settings.bicepparam` | PIM policy configuration only |
-| `modules/pim/pim.bicep` | Azure Resource PIM eligibility schedule request resource |
-| `scripts/Invoke-PimRequest.ps1` | Reads JSON, validates it, selects subscription, combines policy + request parameters, validates and deploys |
-| `docs/PIM_REQUEST_FLOW.md` | This implementation and operating guide |
+The runner normalizes the requested role name and finds the corresponding property in `azureResourcePimPolicy`. The matched policy must:
 
-## 🧰 Prerequisites
+- Exist
+- Have `enabled = true`
+- Include a role definition GUID equal to the GUID supplied in `input.json`
 
-1. PowerShell 7+ (recommended) or compatible PowerShell.
-2. Azure CLI installed and available as `az`.
-3. Bicep support available through Azure CLI.
-4. Sign in interactively or through the intended automation identity:
-   ```powershell
-   az login
-   ```
-5. The executing identity must have sufficient Azure permissions to submit role eligibility schedule requests at the target subscription. Confirm required permissions with your Azure administrator.
+The runner then validates eligible assignment type, new request operation (`AdminAssign`), requested duration against `pimAssignmentDefaults.maximumEligibilityDuration`, and justification/ticket requirements.
 
-## ✍️ Configure `input.json`
+If a policy entry is absent, the runner throws a `POLICY DENIED` error before invoking Azure deployment.
 
-Replace placeholder values such as `<REQUESTOR_ENTRA_OBJECT_ID>`, `<AZURE_SUBSCRIPTION_ID>`, and `<BUSINESS_JUSTIFICATION>`. Keep the role definition ID as a **GUID** (not a full resource ID); the runner builds the subscription-scoped role resource ID.
+### Current configured Azure Resource role policies
 
-Current supported scope:
-- `scope.type = "Subscription"`
+- Owner — role GUID `8e3af657-a8ff-443c-a75c-2fe8c4bcb635`
+- User Access Administrator — role GUID `18d7d88d-d35e-4fb5-a5c3-7773c20a72d9`
 
-Current supported request types are `AdminAssign`, `AdminUpdate`, `AdminRemove`, `AdminExtend`, and `AdminRenew` (subject to Azure API semantics and the template's constraints).
+Contributor is currently in the sample `input.json`, but no Contributor policy exists. Therefore the sample is intentionally rejected until a Contributor policy entry is approved and added. Do not change only the JSON to bypass this policy gate.
 
-The duration must be one of the ISO 8601 values allowed in `pim.bicep`. The script validates the duration before deployment.
-
-Ticket fields are logged for traceability. They are not passed as Azure Resource PIM policy configuration.
-
-## ▶️ Run the request
-
-From repository root:
+## Local usage
 
 ```powershell
-# First preview the generated deployment parameter file (no Azure deployment)
+az login
+az bicep install
+az bicep build --file modules/pim/pim.bicep
+
+# Runs policy validation and parameter generation only; no deployment
 pwsh ./scripts/Invoke-PimRequest.ps1 -WhatIf
 
-# Submit the request
+# Runs policy validation, Azure deployment validation, and submits eligibility
 pwsh ./scripts/Invoke-PimRequest.ps1
 ```
 
-Optional custom paths:
+The script supports `-Location` (default `eastus`). It uses the target subscription ID from `input.json` to set Azure CLI context.
 
-```powershell
-pwsh ./scripts/Invoke-PimRequest.ps1 \
-  -InputFile ./input.json \
-  -PolicyParameterFile ./modules/pim/pim-policy-settings.bicepparam \
-  -TemplateFile ./modules/pim/pim.bicep
-```
+## Important implementation boundaries
 
-> **Note:** The temporary request-specific `.bicepparam` file is created in the same folder as the policy file to preserve its relative `using './pim.bicep'` reference, then deleted when the runner exits.
+The policy file currently acts as a local policy source for pre-deployment validation. The script does not query Azure's existing PIM policy, update live PIM policy settings, or enforce MFA/Conditional Access/approval by itself.
 
-## 🔐 Security and validation behavior
+The Bicep parameter `requestPolicyValidated` is constrained to `true`, which prevents an ordinary direct deployment from omitting the runner's validation flag. This is a deployment guardrail, not a tamper-proof attestation.
 
-- Fails if required values are missing or still placeholders.
-- Checks the request type and allowed duration.
-- Validates that roleDefinitionId is a GUID.
-- Rejects non-subscription scope (not implemented in this runner).
-- Sets Azure CLI's active subscription to the input subscription and verifies it.
-- Runs Azure deployment validation before submitting the deployment.
-- Does not print or store credentials.
-- Uses the JSON ticket fields for traceability only.
+Not implemented yet:
+- Live Azure Resource PIM role management policy update and verification
+- Microsoft Graph policy writes for Entra directory roles and PIM for Groups
+- Resource Group and individual resource scope
+- Approval workflow / Jira integration
+- GitHub Actions workflow
 
-## ⚠️ Important implementation boundary
+## Troubleshooting
 
-The policy objects in `pim-policy-settings.bicepparam` currently describe desired policy configuration. **They are not applied by this Bicep resource.** The template only creates an Azure Resource PIM role eligibility schedule request.
-
-These remain separate future work:
-- Azure Resource PIM role management policy updates via Azure Authorization APIs.
-- Microsoft Entra directory role PIM policy updates via Microsoft Graph.
-- PIM for Groups policy updates via Microsoft Graph.
-- Scope expansion for Resource Group and individual resource levels.
-- Automated approval/ticketing workflow.
-
-## 🧪 Troubleshooting
-
-| Symptom | Likely cause | Action |
+| Error | Cause | Resolution |
 |---|---|---|
-| Placeholder validation error | Input values not replaced | Fill all required JSON values |
-| Azure CLI not found | CLI missing from PATH | Install Azure CLI on the host/runner |
-| Subscription mismatch | Wrong Azure CLI context | Confirm subscription ID and account access |
-| Deployment validation failure | RBAC, API, Bicep or parameter issue | Review Azure deployment validation error |
-| Unsupported scope | JSON scope not Subscription | Use Subscription for now; implement scope-specific templates before expanding |
-| Role definition ID error | Input contains full resource ID | Use the role definition GUID in JSON |
-
-## 📌 Operational flow
-
-```mermaid
-sequenceDiagram
-  participant R as Requestor / Operator
-  participant J as input.json
-  participant PS as PowerShell runner
-  participant AZ as Azure CLI
-  participant ARM as Azure Resource Manager
-  participant PIM as Azure Resource PIM
-
-  R->>J: Fill access request fields
-  PS->>J: Read and parse JSON
-  PS->>PS: Validate required fields/scope/duration
-  PS->>AZ: Select subscription and verify context
-  PS->>PS: Merge request params with policy parameter file
-  PS->>AZ: Deployment validate
-  AZ->>ARM: Validate template/parameters
-  PS->>AZ: Deployment create
-  AZ->>ARM: Submit deployment
-  ARM->>PIM: Create eligibility schedule request
-  PIM-->>ARM: Request/deployment result
-  ARM-->>PS: Outputs/status
-```
-
-## ✅ Acceptance checklist
-
-- [ ] Request details exist only in `input.json`.
-- [ ] Policy settings exist only in `pim-policy-settings.bicepparam`.
-- [ ] Runner validates JSON before calling Azure.
-- [ ] Subscription is selected from JSON, not hardcoded.
-- [ ] Deployment validation succeeds.
-- [ ] Eligibility request deployment succeeds in a test subscription.
-- [ ] Policy API automation is tracked separately.
+| `POLICY DENIED: Role ... is not defined` | No role policy entry | Add approved role policy entry to `.bicepparam` |
+| Role ID mismatch | Request GUID differs from policy GUID | Correct JSON or policy entry after verifying Azure role definition |
+| Duration exceeds maximum | Requested eligibility duration exceeds policy limit | Request a shorter duration or update policy through approval |
+| Missing ticket/justification | Policy requires request metadata | Fill the required input fields |
+| Scope not supported | Input is not Subscription | Scope expansion is not implemented in this branch |
+| Azure deployment validation error | Azure RBAC, API, Bicep or request issue | Inspect Azure CLI error and deployment validation output |
