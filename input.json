@@ -1,41 +1,39 @@
 {
   "request": {
-    "ticketId": "PIKE-PIM-001",
-    "requestedBy": "kureti.venkat.nishit@gmail.com",
-    "approved": true,
+    "ticketNumber": "PIKE-1234",
+    "ticketSystem": "Jira",
+    "requestedBy": "<REQUESTER_UPN>",
+    "approved": false,
     "environment": "dev",
     "project": "BIFROST",
-    "deploymentMethod": "Bicep"
+    "justification": "Temporary privileged access required for approved support work."
   },
   "subscription": {
-    "name": "BIFROST-SC",
     "subscriptionId": "<AZURE_SUBSCRIPTION_ID>"
   },
-  "pim": {
-    "enabled": true,
-    "assignmentType": "Eligibility",
-    "user": {
-      "alias": "pim_user_1",
-      "principalId": "ccf15dd1-bc15-445a-9b5f-4e2dffc79e03",
-      "principalType": "User"
+  "pimRequest": {
+    "platform": "AzureResource",
+    "principal": {
+      "type": "User",
+      "objectId": "<ENTRA_USER_OBJECT_ID>"
     },
     "role": {
-      "roleName": "Contributor",
+      "name": "Contributor",
       "roleDefinitionId": "b24988ac-6180-42a0-ab88-20f7382dd24c"
     },
     "scope": {
-      "type": "Subscription"
+      "type": "Subscription",
+      "resourceGroupName": "",
+      "resourceId": ""
     },
-    "schedule": {
-      "duration": "P90D",
-      "expirationType": "AfterDuration",
-      "startDateTime": ""
-    },
-    "justification": "Eligible Contributor access requested for BIFROST infrastructure support.",
-    "ticketInfo": {
-      "ticketSystem": "Jira",
-      "ticketNumber": "PIKE-PIM-001"
-    },
-    "requestType": "AdminAssign"
+    "assignment": {
+      "type": "Eligible",
+      "startDateTime": "",
+      "expiration": {
+        "type": "AfterDuration",
+        "duration": "P30D",
+        "endDateTime": ""
+      }
+    }
   }
 }
