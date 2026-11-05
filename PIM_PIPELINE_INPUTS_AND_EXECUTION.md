@@ -2,7 +2,7 @@
 
 ## 1. Purpose
 
-This pipeline creates **Azure subscription-scoped PIM role eligibility** for a user through the Bicep module at `modules/pim/pim.bicep`.
+This pipeline creates **Azure PIM role eligibility** at Subscription, Resource Group, or individual Resource scope. The scope-aware REST request is driven by root `input.json`. The Bicep module remains subscription-targeted and is compiled for syntax validation only.
 
 - Workflow: `.github/workflows/pim.yml`
 - Input file: `input.json` (repository root)
@@ -23,7 +23,7 @@ When manually starting the workflow in GitHub Actions, the UI asks for:
 
 | Input | Type | Default | Meaning |
 |---|---|---|---|
-| `deploy_pim` | Boolean | `false` | `false`: validate, login, and run What-If. `true`: create the eligibility request. |
+| `deploy_pim` | Boolean | `false` | `false`: validation-only. `true`: authenticate, check scope readability, and submit the PIM request. |
 
 This input is defined under `on.workflow_dispatch.inputs` in `pim.yml`. It is read in the job conditions through the `inputs.deploy_pim` context.
 
@@ -37,7 +37,7 @@ The workflow checks out the repository and reads `input.json`. The file contains
 |---|---|
 | `request.approved` | Must be `true`; otherwise validation fails. |
 | `request.ticketId` | Request/audit metadata in the input record. |
-| `subscription.name` | Validated against `BIFROST-SC`. |
+| `subscription.name` | Validated against `BIFROST-SC`. |\n| `subscription.subscriptionId` | Target subscription GUID; authoritative input. JSON does not expand `${...}` variables. |
 | `pim.enabled` | Must be `true`. |
 | `pim.assignmentType` | Must be `Eligibility`. |
 | `pim.user.alias` | Validated as `pim_user_1`; this is a label, not the Azure identity. |
@@ -45,26 +45,26 @@ The workflow checks out the repository and reads `input.json`. The file contains
 | `pim.user.principalType` | Must be `User`. |
 | `pim.role.roleName` | Human-readable role name (e.g. Contributor). |
 | `pim.role.roleDefinitionId` | Azure built-in/custom role GUID. |
-| `pim.scope.type` | Must be `Subscription`. |
+| `pim.scope.type` | `Subscription`, `ResourceGroup`, or `Resource`. |\n| `pim.scope.resourceGroupName` | Required for ResourceGroup scope. |\n| `pim.scope.resourceId` | Required full ARM resource ID for Resource scope. |
 | `pim.schedule.duration` | Eligibility period in ISO 8601 format (e.g. `P90D`). |
 | `pim.schedule.expirationType` | Must be `AfterDuration`. |
 | `pim.justification` | PIM assignment justification. |
 | `pim.ticketInfo.ticketSystem` | Ticketing system (e.g. Jira). |
 | `pim.ticketInfo.ticketNumber` | Ticket/reference number used in PIM request details and deterministic request name. |
 
-The workflow currently supports one user alias (`pim_user_1`), subscription scope, and PIM eligibility only. Validation intentionally rejects other configurations.
+The workflow supports the configured user alias and PIM eligibility (`AdminAssign`). Scope may be Subscription, ResourceGroup, or Resource. Other request types require a separate implementation with appropriate existing schedule IDs/user context.
 
 ## 3. GitHub Environment variables
 
-The jobs reference GitHub **Environment variables**, not repository-level variables by default. Both jobs use the environment named `bifrost-env`.
+The jobs reference GitHub **Environment variables**, not repository-level variables by default. Jobs use the environment named `bifrost-dev`.
 
-Configure these under **Repository → Settings → Environments → bifrost-env → Environment variables**:
+Configure these under **Repository → Settings → Environments → bifrost-dev → Environment variables**:
 
 | Variable | Source | Purpose |
 |---|---|---|
 | `AZURE_CLIENT_ID` | Azure app/service principal client ID used for GitHub OIDC | Azure login identity |
 | `AZURE_TENANT_ID` | Microsoft Entra tenant ID | Tenant context and validation |
-| `AZURE_SUBSCRIPTION_ID` | Target Azure subscription ID | Deployment subscription and validation |
+| `AZURE_SUBSCRIPTION_ID` | Not used for target selection | Target subscription is read from `input.json`; this variable must not override it. |
 
 These values are referenced as `${{ vars.VARIABLE_NAME }}`. The workflow does not store client secrets: Azure login uses OIDC. The federated credential must trust this repository and the branch/environment context, and the identity needs permission to create PIM eligibility schedule requests at the target scope.
 
@@ -100,7 +100,7 @@ flowchart TD
 7. Generates a deterministic UUID for the PIM schedule request based on subscription, principal, role, and ticket.
 8. Publishes validated values as job outputs using `GITHUB_OUTPUT`.
 
-### Job 2 — Preview or deploy
+### Job 2 — Create PIM request (when `deploy_pim=true`)
 
 1. Waits for Job 1 (`needs: validate`).
 2. Checks out the repository.
@@ -119,7 +119,7 @@ The generated `pim.parameters.json` is not intended to be committed. It is creat
 
 | Source | Workflow variable/parameter | Destination |
 |---|---|---|
-| GitHub Environment `AZURE_SUBSCRIPTION_ID` | `subscription_id` output | Azure CLI subscription deployment |
+| `input.json:subscription.subscriptionId` | `subscription_id` output | Azure OIDC login and Azure CLI context |
 | GitHub Environment `AZURE_TENANT_ID` | `tenant_id` output | Azure OIDC login |
 | GitHub Environment `AZURE_CLIENT_ID` | Direct variable reference | Azure OIDC login |
 | `input.json:pim.user.principalId` | `principal_id` output | Bicep `principalId` |
@@ -142,7 +142,7 @@ The workflow passes these parameters to `modules/pim/pim.bicep`:
 - `ticketNumber`
 - `ticketSystem`
 
-The module declares `targetScope = 'subscription'` and creates a resource of type:
+The module declares `targetScope = 'subscription'` and creates a resource of type (subscription-scope module/local test only):
 
 `Microsoft.Authorization/roleEligibilityScheduleRequests@2022-04-01-preview`
 
@@ -162,18 +162,18 @@ with `requestType: 'AdminAssign'` and an expiration of `AfterDuration`.
 | Symptom | Check |
 |---|---|
 | Workflow missing from Actions / no Run workflow button | Confirm `.github/workflows/pim.yml` exists on the default branch and the workflow is enabled. |
-| Validation fails for subscription/tenant | Check `AZURE_SUBSCRIPTION_ID` and `AZURE_TENANT_ID` in GitHub Environment `bifrost-env`. |
+| Validation fails for subscription/tenant | Set `subscription.subscriptionId` in `input.json` to a valid GUID and verify `AZURE_TENANT_ID` in GitHub Environment `bifrost-dev`. |
 | Azure login fails | Check `AZURE_CLIENT_ID`, OIDC federation subject/issuer/audience, and the selected GitHub branch/environment trust. |
 | User principal ID validation fails | Replace the placeholder with the target user's Entra Object ID GUID. |
 | Bicep build fails | Review `modules/pim/pim.bicep` syntax and Azure CLI/Bicep versions. |
 | What-If/deployment authorization fails | Ensure the GitHub OIDC identity has sufficient permissions for PIM eligibility schedule requests at the subscription scope. |
-| Role or scope is rejected | Verify role GUID and subscription scope; this branch currently supports only the specified subscription scope. |
+| Role or scope is rejected | Verify role GUID/full role ID, RG name or full resource ID; scope must belong to the subscription ID in input.json. |
 
 ## 9. Security and operational notes
 
 - Never commit secrets, credentials, or access tokens to `input.json`.
 - Use GitHub Environment protection rules/approvals if required for production access.
-- Keep `deploy_pim` defaulted to `false`.
+- Keep `deploy_pim` defaulted to `false`.\n- `input.json:subscription.subscriptionId` is the authoritative subscription; the GitHub environment variable is not used to choose it.\n- The workflow verifies subscription context and scope read access before making the PIM request.
 - A successful deployment creates **eligibility**, not immediate active Contributor access.
 - The eligible user must activate the role through PIM, subject to tenant activation policy.
 - This workflow is manually triggered only; it does not deploy on push.
@@ -374,3 +374,48 @@ Remove-Item pim.local.parameters.json, pim-request-body.json -ErrorAction Silent
 | Invalid role | Verify role GUID/full role definition ID. |
 | Invalid scope | Check subscription, RG, and ARM resource ID. |
 | Request name conflict | Generate a new GUID. |
+
+
+## 11. Scope selection and subscription source of truth
+
+The workflow reads target subscription and scope from root `input.json`. GitHub Environment variables provide authentication context only.
+
+### Subscription scope
+```json
+"subscription": { "name": "BIFROST-SC", "subscriptionId": "<AZURE_SUBSCRIPTION_ID>" },
+"pim": { "scope": { "type": "Subscription" } }
+```
+Replace the placeholder with the real subscription GUID. **Do not use** `"${AZURE_SUBSCRIPTION_ID}"` in JSON: JSON does not perform shell variable expansion.
+
+### Resource Group scope
+```json
+"subscription": { "name": "BIFROST-SC", "subscriptionId": "<AZURE_SUBSCRIPTION_ID>" },
+"pim": { "scope": { "type": "ResourceGroup", "resourceGroupName": "my-resource-group" } }
+```
+
+### Individual Resource scope
+```json
+"subscription": { "name": "BIFROST-SC", "subscriptionId": "<AZURE_SUBSCRIPTION_ID>" },
+"pim": { "scope": { "type": "Resource", "resourceId": "/subscriptions/<AZURE_SUBSCRIPTION_ID>/resourceGroups/<RG>/providers/<PROVIDER>/<TYPE>/<RESOURCE_NAME>" } }
+```
+Supply the full ARM resource ID. Validation checks that the resource path is inside the subscription configured in the same JSON.
+
+### GitHub Environment `bifrost-dev`
+| Variable | Purpose |
+|---|---|
+| `AZURE_CLIENT_ID` | OIDC client/workload identity |
+| `AZURE_TENANT_ID` | Tenant for Azure login |
+| `AZURE_SUBSCRIPTION_ID` | Not used to select the target subscription |
+
+Azure Login receives the subscription ID output from `input.json`. The workflow then calls `az account set`, confirms the active subscription, and runs a scope-level RBAC read preflight. This confirms read access only; the PIM schedule request itself checks the required PIM write authorization.
+
+## 12. Scope-aware workflow implementation
+
+- Subscription scope: `/subscriptions/{subscriptionId}`
+- Resource Group scope: `/subscriptions/{subscriptionId}/resourceGroups/{resourceGroupName}`
+- Resource scope: exact `pim.scope.resourceId`
+- Role definition GUID: expanded to `/subscriptions/{subscriptionId}/providers/Microsoft.Authorization/roleDefinitions/{GUID}`
+- Full role definition resource ID: passed through unchanged.
+- Actual PIM eligibility creation uses Azure REST at the selected scope.
+- `modules/pim/pim.bicep` remains `targetScope = 'subscription'`; it is built as a validation step, but not used for RG/resource scope deployment.
+- `deploy_pim=false` is validation-only. There is no What-If for this PIM REST operation.
