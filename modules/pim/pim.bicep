@@ -15,8 +15,6 @@ param justification string
 param duration string
 param startDateTime string = utcNow('yyyy-MM-ddTHH:mm:ssZ')
 param requestName string
-param ticketNumber string
-param ticketSystem string = 'Manual'
 
 // Desired policy config passed from .bicepparam. The Azure Resource itself
 // below does not apply these policy objects; policy API automation is needed.
@@ -32,10 +30,6 @@ resource eligibilityRequest 'Microsoft.Authorization/roleEligibilityScheduleRequ
     roleDefinitionId: roleDefinitionId
     requestType: requestType
     justification: justification
-    ticketInfo: {
-      ticketNumber: ticketNumber
-      ticketSystem: ticketSystem
-    }
     scheduleInfo: {
       startDateTime: startDateTime
       expiration: {
