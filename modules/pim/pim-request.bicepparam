@@ -5,8 +5,6 @@ param roleDefinitionId = '/subscriptions/<SUBSCRIPTION_ID>/providers/Microsoft.A
 param justification = 'Temporary privileged access - request <REQUEST_REFERENCE>'
 param startDateTime = utcNow('yyyy-MM-ddTHH:mm:ssZ')
 param requestName = newGuid()
-param ticketNumber = '<REQUEST_REFERENCE>'
-param ticketSystem = 'Manual'
 
 // Policy intent based on supplied screenshots. These are inputs/configuration,
 // not applied by the Azure eligibility resource below by themselves.
