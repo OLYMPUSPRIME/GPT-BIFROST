@@ -1,92 +1,126 @@
-# BIFROST PIM — Azure Portal Values and How to Obtain Them
+# 🧭 BIFROST PIM — Azure Portal values and variable guide
 
-This document lists values to collect before submitting a BIFROST PIM eligibility request. Keep request-specific values in root input.json; keep PIM policy configuration in modules/pim/pim-request.bicepparam.
+Use this guide to collect values for the BIFROST request. **Request values** go in root `input.json`; **policy settings** go in `modules/pim/pim-policy-settings.bicepparam`.
 
-> **Important:** Do not commit real user Object IDs, subscription IDs, tenant IDs, or organization identifiers into a public repository. Use placeholders and follow repository access controls. Never store passwords, client secrets, or private keys in these files.
+> 🔒 Do not commit real user Object IDs, subscription IDs, tenant IDs, secrets, or private keys to a public repository. Use placeholders and your organization's secure storage standards.
 
-## 1. Request-specific values
+## 🧾 1. Request-specific values
 
-| Value | Where used | How to obtain |
+| Value | JSON location | Azure Portal source |
 |---|---|---|
-| Requestor display name | input.json → pimAccessRequest.requestor.displayName | Azure Portal → Microsoft Entra ID → Users → user → Overview |
-| Requestor UPN | input.json → pimAccessRequest.requestor.userPrincipalName | User Overview → User principal name |
-| Requestor Entra Object ID | input.json → pimAccessRequest.requestor.entraObjectId; Bicep principalId | User Overview → Object ID (GUID) |
-| Subscription ID | input.json → pimAccessRequest.requestedAccess.scope.subscriptionId | Azure Portal → Subscriptions → target subscription → Overview → Subscription ID |
-| Subscription name | Optional descriptive label | Subscriptions → Overview → Subscription name |
-| Role name | input.json → requestedAccess.roleName | Target scope → Access control (IAM) → Add role assignment → choose role |
-| Role definition ID | input.json → requestedAccess.roleDefinitionId and pim-request.bicepparam → roleDefinitionId | IAM → Roles → select role → role details/JSON; for built-in roles, Microsoft Learn documents role GUIDs |
-| Resource Group name | input.json → requestedAccess.scope.resourceGroupName when scope is ResourceGroup | Azure Portal → Resource groups → exact name |
-| Resource ID | input.json → requestedAccess.scope.resourceId when scope is Resource | Resource → Properties or JSON View → full Resource ID |
-| Business justification | input.json → requestedAccess.justification and Bicep justification | Requester/business owner |
-| Request reference | input.json → requestMetadata.requestReference and Bicep ticketNumber | Internal request system or manual reference (Jira integration is not enabled) |
-| Requested by | input.json → requestMetadata.requestedBy | Requester's UPN from Entra user Overview |
-| Environment | input.json → requestMetadata.environment | Team environment label, e.g. dev/test/prod |
+| Requestor display name | `pimAccessRequest.requestor.displayName` | Entra ID → Users → user → Overview |
+| Requestor UPN | `pimAccessRequest.requestor.userPrincipalName` | User Overview → User principal name |
+| Entra Object ID | `pimAccessRequest.requestor.entraObjectId` | User Overview → Object ID (GUID) |
+| Subscription ID | `requestedAccess.scope.subscriptionId` | Subscriptions → target subscription → Overview |
+| Role name | `requestedAccess.roleName` | Scope → Access control (IAM) → Roles |
+| Role GUID | `requestedAccess.roleDefinitionId` | IAM → Roles → role details/JSON |
+| Resource Group name | `requestedAccess.scope.resourceGroupName` | Resource groups → exact name |
+| Resource ID | `requestedAccess.scope.resourceId` | Resource → Properties / JSON View |
+| Justification | `requestedAccess.justification` | Requester/business owner |
+| Ticket ID | `requestMetadata.ticketId` | Ticketing system |
+| Ticket number | `requestMetadata.ticketNumber` | Ticketing system |
+| Ticket system | `requestMetadata.ticketSystem` | Ticketing system/source |
+| Requested by | `requestMetadata.requestedBy` | Requester's UPN |
+| Environment | `requestMetadata.environment` | Team environment convention |
 
-## 2. Values in pim-request.bicepparam
+## ⚙️ 2. Bicep request parameters
 
-| Parameter | Meaning | How to obtain / set |
+| Parameter | Purpose | How to set/obtain |
 |---|---|---|
-| principalId | Entra Object ID of the eligible principal | Entra ID → Users → target user → Overview → Object ID |
-| roleDefinitionId | Full Azure role definition resource ID | Combine subscription ID and role GUID: /subscriptions/<SUBSCRIPTION_ID>/providers/Microsoft.Authorization/roleDefinitions/<ROLE_GUID> |
-| requestType | Operation; typically AdminAssign for new eligibility | Module setting; not a portal ID |
-| justification | Reason for access | Requester/business owner |
-| duration | Eligibility period in ISO 8601, e.g. P30D | Approved access duration |
-| startDateTime | Start time; currently defaults to UTC now in parameter file | Generated by parameter expression unless overridden |
-| requestName | Unique schedule request name | Currently generated using newGuid() |
-| Request reference | Stored in root input.json → pimAccessRequest.requestMetadata.requestReference | Internal request system/manual reference |
+| `principalId` | Eligible principal Object ID | Entra user Overview → Object ID |
+| `roleDefinitionId` | Full Azure role definition resource ID | Subscription ID + Azure role GUID |
+| `requestType` | Schedule operation (typically `AdminAssign` for new eligibility) | Request operation, not a portal ID |
+| `justification` | Business need | Requester/approver |
+| `duration` | Eligibility period, ISO 8601 (e.g. `P30D`) | Approved request duration; constrained by Bicep `@allowed` |
+| `startDateTime` | Schedule start | Template default / approved override |
+| `requestName` | Unique schedule request name | Generated or supplied by caller |
 
+## 🧱 Role definition resource ID
 
-### Role definition resource ID
-
-The parameter expects the full resource ID, not just the role GUID:
+The Bicep parameter expects the full Azure role definition resource ID:
 
 ```text
 /subscriptions/<SUBSCRIPTION_ID>/providers/Microsoft.Authorization/roleDefinitions/<ROLE_GUID>
 ```
 
-Ensure the subscription in this path is the intended target subscription.
+Make sure the subscription ID matches the intended target.
 
-## 3. Approver Object IDs in PIM policy settings
+## 🛡️ 3. Approver Object IDs
 
-The parameter file has approver placeholders in:
+Approver placeholders appear in the policy settings for Azure Resource PIM, Entra roles, and group Owner policies.
 
-- azureResourcePimPolicy.owner.approverObjectIds
-- entraRolePimPolicy.globalAdministrator.approverObjectIds
-- groupPimPolicy.owner.approverObjectIds
+1. Open Microsoft Entra ID → Users (or Groups if the policy expects a group).
+2. Select the approved approver identity.
+3. Copy the **Object ID** from Overview.
+4. Replace the correct placeholder in `pim-policy-settings.bicepparam`.
+5. Confirm identity type, approval requirements, and that self-approval is not inadvertently configured.
 
-To obtain an approver Object ID, open Azure Portal → Microsoft Entra ID → Users (or Groups, if a group is expected), select the approved approver identity, and copy its Object ID from Overview. Replace the relevant placeholder with the GUID. Confirm the expected identity type and approval policy; avoid configuring the requester as their own approver unless explicitly allowed.
-
-## 4. GitHub Actions / Azure login values
+## 🔐 4. GitHub Actions / Azure identity values
 
 | Value | Portal location | Purpose |
 |---|---|---|
-| Tenant ID | Microsoft Entra ID → Overview → Tenant ID | GitHub Actions Azure login |
-| Application/client ID | Microsoft Entra ID → App registrations → app → Overview → Application (client) ID | GitHub Actions OIDC identity |
-| Federated credential | App registration → Certificates & secrets → Federated credentials | Establishes GitHub Actions trust; not a JSON parameter |
-| Subscription ID | Subscriptions → target subscription → Overview | Azure CLI deployment target and role scope |
+| Tenant ID | Entra ID → Overview → Tenant ID | Azure login tenant |
+| Application/client ID | App registrations → app → Overview | GitHub Actions OIDC identity |
+| Federated credential | App registration → Certificates & secrets → Federated credentials | OIDC trust configuration |
+| Subscription ID | Subscriptions → target → Overview | CLI deployment target |
 
-Do not put client secrets or certificates in input.json or .bicepparam. Prefer GitHub Actions OIDC.
+Prefer GitHub Actions OIDC. Do not store client secrets or certificates in JSON or parameter files.
 
-## 5. Pre-deployment checklist
+## 🧭 Collection workflow
+
+```mermaid
+flowchart TD
+  A([🧑 Requester / operator]) --> B[👤 Find user in Entra ID]
+  B --> C[🪪 Capture Object ID and UPN]
+  A --> D[☁️ Open target subscription]
+  D --> E[🎯 Capture Subscription ID]
+  A --> F[🛡️ Select role and scope]
+  F --> G[📋 Capture role GUID / resource ID]
+  A --> H[🎫 Collect ticket metadata]
+  C --> I[🧾 Populate input.json]
+  E --> I
+  G --> I
+  H --> I
+  J[🛡️ Capture approver Object IDs] --> K[⚙️ Update PIM policy settings]
+  I --> L([🔍 Review and validate])
+  K --> L
+
+  subgraph AzurePortal["🌐 Azure Portal / Entra"]
+    B
+    C
+    D
+    E
+    F
+    G
+    J
+  end
+  subgraph RequestConfig["🧾 Request configuration"]
+    H
+    I
+  end
+  subgraph PolicyConfig["🛡️ Policy configuration"]
+    K
+  end
+
+  classDef portal fill:#E3F2FD,stroke:#1565C0,color:#0D47A1,stroke-width:2px;
+  classDef req fill:#FFF3E0,stroke:#EF6C00,color:#E65100,stroke-width:2px;
+  classDef policy fill:#F3E5F5,stroke:#7B1FA2,color:#4A148C,stroke-width:2px;
+  class A,B,C,D,E,F,G,J portal;
+  class H,I req;
+  class K policy;
+```
+
+## ✅ 5. Pre-deployment checklist
 
 - [ ] Verify tenant and subscription.
 - [ ] Confirm principal Object ID (not UPN/display name).
-- [ ] Confirm role name and role GUID correspond.
-- [ ] Confirm target scope and fill its required fields.
-- [ ] Confirm roleDefinitionId includes the intended subscription ID.
-- [ ] Confirm approved duration and business justification.
+- [ ] Check role name and role GUID match.
+- [ ] Confirm scope type and required scope fields.
+- [ ] Confirm role definition ID uses the intended subscription.
+- [ ] Validate duration and justification.
 - [ ] Replace required approver Object ID placeholders.
-- [ ] Review all values before running deployment.
+- [ ] Review ticket ID, number, and system values.
 
-## 6. Implementation caveat
+## ⚠️ 6. JSON-to-Bicep mapping caveat
 
-Root input.json is intended for request-specific values; pim-request.bicepparam holds module parameters and policy settings. Bicep does not automatically parse JSON. A workflow or script must explicitly read the JSON and pass its values to Bicep/Azure CLI. Verify this mapping exists before assuming edits to input.json affect a deployment.
-
-## Request operation and eligibility duration (root input.json)
-
-These request fields are configured in the root `input.json` under `pimAccessRequest.requestedAccess`:
-
-- `requestType`: Azure Resource PIM schedule operation. For a new eligibility request use `AdminAssign`. Other supported operations in Bicep are `AdminUpdate`, `AdminRemove`, `AdminExtend`, and `AdminRenew`.
-- `duration`: Eligibility schedule length using an ISO 8601 duration string, e.g. `P30D` (30 days), `P90D` (90 days), `PT1H` (1 hour), or `P1M` (1 month).
-
-The Bicep module uses an `@allowed` list of common ISO 8601 duration strings. This is a finite list—not every possible ISO 8601 duration expression. If you need another duration, add the exact value to the Bicep `@allowed` list after confirming it is supported by the Azure PIM API.
+Bicep does not automatically parse root `input.json`. A runner or script must explicitly read its values and pass request parameters to Azure CLI/Bicep. Policy settings remain in the renamed `.bicepparam` file.
