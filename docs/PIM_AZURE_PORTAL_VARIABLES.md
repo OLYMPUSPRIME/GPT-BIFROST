@@ -81,3 +81,12 @@ Do not put client secrets or certificates in input.json or .bicepparam. Prefer G
 ## 6. Implementation caveat
 
 Root input.json is intended for request-specific values; pim-request.bicepparam holds module parameters and policy settings. Bicep does not automatically parse JSON. A workflow or script must explicitly read the JSON and pass its values to Bicep/Azure CLI. Verify this mapping exists before assuming edits to input.json affect a deployment.
+
+## Request operation and eligibility duration (root input.json)
+
+These request fields are configured in the root `input.json` under `pimAccessRequest.requestedAccess`:
+
+- `requestType`: Azure Resource PIM schedule operation. For a new eligibility request use `AdminAssign`. Other supported operations in Bicep are `AdminUpdate`, `AdminRemove`, `AdminExtend`, and `AdminRenew`.
+- `duration`: Eligibility schedule length using an ISO 8601 duration string, e.g. `P30D` (30 days), `P90D` (90 days), `PT1H` (1 hour), or `P1M` (1 month).
+
+The Bicep module uses an `@allowed` list of common ISO 8601 duration strings. This is a finite list—not every possible ISO 8601 duration expression. If you need another duration, add the exact value to the Bicep `@allowed` list after confirming it is supported by the Azure PIM API.
