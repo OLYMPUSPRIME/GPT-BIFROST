@@ -1,0 +1,72 @@
+{
+  "azureResourceRoles": {
+    "Owner": {
+      "requireMfa": true,
+      "requireConditionalAccess": true,
+      "requireApproval": true,
+      "approvers": ["<OTHER_SUBSCRIPTION_OWNER_OBJECT_ID>"],
+      "notificationsEnabled": true,
+      "activationDuration": "PT1H",
+      "requireJustification": true,
+      "requireTicketInformation": true
+    },
+    "UserAccessAdministrator": {
+      "requireMfa": true,
+      "requireConditionalAccess": true,
+      "requireApproval": false,
+      "approvers": [],
+      "notificationsEnabled": true,
+      "activationDuration": "PT1H",
+      "requireJustification": true,
+      "requireTicketInformation": true
+    }
+  },
+  "entraDirectoryRoles": {
+    "GlobalAdministrator": {
+      "requireMfa": true,
+      "requireConditionalAccess": true,
+      "requireApproval": true,
+      "approvers": ["<OTHER_GLOBAL_ADMIN_OBJECT_ID>"],
+      "notificationsEnabled": true,
+      "activationDuration": "PT1H",
+      "requireJustification": true,
+      "requireTicketInformation": true
+    },
+    "ExchangeAdministrator": {
+      "requireMfa": true,
+      "requireConditionalAccess": true,
+      "requireApproval": false,
+      "approvers": [],
+      "notificationsEnabled": true,
+      "activationDuration": "PT2H",
+      "requireJustification": true,
+      "requireTicketInformation": false
+    }
+  },
+  "pimForGroups": {
+    "Owner": {
+      "requireMfa": true,
+      "requireConditionalAccess": true,
+      "requireApproval": true,
+      "approvers": ["<OTHER_GROUP_OWNER_OBJECT_ID>"],
+      "notificationsEnabled": true,
+      "activationDuration": "PT1H"
+    },
+    "Member": {
+      "requireMfa": true,
+      "requireConditionalAccess": true,
+      "requireApproval": false,
+      "approvers": [],
+      "notificationsEnabled": true,
+      "activationDuration": "PT5H"
+    }
+  },
+  "assignmentDefaults": {
+    "eligibleByDefault": true,
+    "maximumEligibilityDuration": "P90D",
+    "requireJustification": true,
+    "requireTicketReference": true,
+    "allowPermanentEligible": false,
+    "allowPermanentActive": false
+  }
+}
