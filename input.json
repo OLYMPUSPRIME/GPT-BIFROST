@@ -1,32 +1,18 @@
 {
-  "configurationPurpose": "BIFROST Azure PIM access request input. Values in this file describe the person receiving PIM access and the access being requested. They are not PIM activation policy settings; those belong in the PIM .bicepparam file.",
-  "pimAccessRequest": {
-    "requestor": {
-      "displayName": "<REQUESTOR_DISPLAY_NAME>",
-      "userPrincipalName": "<REQUESTOR_UPN>",
-      "entraObjectId": "<REQUESTOR_ENTRA_OBJECT_ID>"
-    },
-    "requestedAccess": {
-      "platform": "AzureResource",
-      "roleName": "Contributor",
-      "roleDefinitionId": "b24988ac-6180-42a0-ab88-20f7382dd24c",
-      "scope": {
-        "type": "Subscription",
-        "subscriptionId": "<AZURE_SUBSCRIPTION_ID>",
-        "resourceGroupName": "",
-        "resourceId": ""
-      },
-      "assignmentType": "Eligible",
-      "requestType": "AdminAssign",
-      "duration": "P30D",
-      "justification": "<BUSINESS_JUSTIFICATION>"
-    },
-    "requestMetadata": {
-      "requestedBy": "<REQUESTER_UPN>",
-      "environment": "dev",
-      "ticketId": "<TICKET_ID>",
-      "ticketNumber": "<TICKET_NUMBER>",
-      "ticketSystem": "<TICKET_SYSTEM>"
-    }
-  }
+  "environment": "bifrost-dev",
+  "tenantId": "REPLACE_WITH_TENANT_ID",
+  "subscriptionId": "REPLACE_WITH_SUBSCRIPTION_ID",
+  "principalId": "REPLACE_WITH_ENTRA_OBJECT_ID",
+  "principalType": "ServicePrincipal",
+  "roleName": "Reader",
+  "roleDefinitionGuid": "acdd72a7-3385-48ef-bd42-f606fba81ae7",
+  "scopeLevel": "Subscription",
+  "resourceGroupName": "",
+  "resourceId": "",
+  "assignmentId": "bifrost-dev",
+  "condition": "",
+  "conditionVersion": "2.0",
+  "ticketNumber": "REPLACE_WITH_APPROVED_TICKET",
+  "ticketSystem": "Jira",
+  "justification": "Approved access for the requested task."
 }
