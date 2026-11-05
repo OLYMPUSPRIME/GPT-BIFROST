@@ -28,12 +28,14 @@
     },
     "schedule": {
       "duration": "P90D",
-      "expirationType": "AfterDuration"
+      "expirationType": "AfterDuration",
+      "startDateTime": ""
     },
     "justification": "Eligible Contributor access requested for BIFROST infrastructure support.",
     "ticketInfo": {
       "ticketSystem": "Jira",
       "ticketNumber": "PIKE-PIM-001"
-    }
+    },
+    "requestType": "AdminAssign"
   }
 }
