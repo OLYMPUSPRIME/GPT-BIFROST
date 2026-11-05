@@ -9,7 +9,7 @@
   },
   "subscription": {
     "name": "BIFROST-SC",
-    "subscriptionId": "${AZURE_SUBSCRIPTION_ID}"
+    "subscriptionId": "<AZURE_SUBSCRIPTION_ID>"
   },
   "pim": {
     "enabled": true,
