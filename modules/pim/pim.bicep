@@ -9,6 +9,10 @@ param principalId string
 @description('Full subscription-scoped Azure role definition resource ID.')
 param roleDefinitionId string
 
+@description('PIM role eligibility schedule request action.')
+@allowed(['AdminAssign', 'AdminUpdate', 'AdminRemove', 'AdminExtend', 'AdminRenew', 'SelfActivate', 'SelfDeactivate', 'SelfExtend', 'SelfRenew'])
+param requestType string = 'AdminAssign'
+
 @description('Eligibility request justification.')
 param justification string
 
@@ -27,12 +31,12 @@ param ticketNumber string
 @description('Ticket system name.')
 param ticketSystem string = 'Jira'
 
-resource eligibleAssignment 'Microsoft.Authorization/roleEligibilityScheduleRequests@2022-04-01-preview' = {
+resource eligibleAssignment 'Microsoft.Authorization/roleEligibilityScheduleRequests@2024-09-01-preview' = {
   name: requestName
   properties: {
     principalId: principalId
     roleDefinitionId: roleDefinitionId
-    requestType: 'AdminAssign'
+    requestType: requestType
     justification: justification
     ticketInfo: {
       ticketNumber: ticketNumber
