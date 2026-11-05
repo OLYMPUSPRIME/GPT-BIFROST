@@ -1,9 +1,11 @@
 using './pim.bicep'
 
-// Policy intent based on supplied screenshots. These are configuration inputs;
-// they are not applied by the eligibility schedule request itself.
+// Policy intent used by the PowerShell pre-deployment validator.
+// These values do not themselves update Azure PIM policy settings.
 param azureResourcePimPolicy = {
   owner: {
+    enabled: true
+    roleDefinitionId: '8e3af657-a8ff-443c-a75c-2fe8c4bcb635'
     requireMfa: true
     requireConditionalAccess: true
     requireApproval: true
@@ -14,6 +16,8 @@ param azureResourcePimPolicy = {
     requireTicketInformation: true
   }
   userAccessAdministrator: {
+    enabled: true
+    roleDefinitionId: '18d7d88d-d35e-4fb5-a5c3-7773c20a72d9'
     requireMfa: true
     requireConditionalAccess: true
     requireApproval: false
