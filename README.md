@@ -191,3 +191,28 @@ The GitHub Environment `bifrost-dev` is used for OIDC identity variables:
 - `AZURE_TENANT_ID`
 
 The scope preflight checks ARM read access to the configured target. PIM write authorization is checked by Azure when the REST request is submitted. For detailed examples and CLI testing, see [PIM_PIPELINE_INPUTS_AND_EXECUTION.md](PIM_PIPELINE_INPUTS_AND_EXECUTION.md).
+
+## Subscription selection: important clarification
+
+In `modules/pim/pim.bicep`, the declaration:
+
+```bicep
+targetScope = 'subscription'
+```
+
+sets the **deployment scope** to subscription level. It does **not** identify or select a particular subscription, and it does not read a subscription ID from `input.json` by itself.
+
+The subscription used by a subscription-scope Bicep deployment is selected by the deployment command:
+
+- If the command includes `--subscription <SUBSCRIPTION_ID>`, that ID is the target subscription.
+- If `--subscription` is omitted, Azure CLI uses its currently selected subscription (`az account show --query id -o tsv`).
+
+The root `input.json` includes a `subscriptionId` field, but **the current `modules/pim/pim.bicep` does not directly consume that field**. A runner/workflow must read the JSON and explicitly pass the subscription ID to Azure CLI (for example, as `--subscription`) before deployment. Do not assume the JSON value controls the deployment unless that wiring is present and verified.
+
+Check the active CLI context with:
+
+```bash
+az account show --query "{Name:name, SubscriptionId:id, TenantId:tenantId}" -o table
+```
+
+Before deploying, verify that the selected subscription matches the intended subscription in `input.json`.
