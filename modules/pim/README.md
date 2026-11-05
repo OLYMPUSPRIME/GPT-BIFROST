@@ -1,86 +1,125 @@
-# PIM Bicep Module (Mark-1)
+# BIFROST PIM reusable module — Mark-2
 
-Creates Azure RBAC **PIM role eligibility schedule requests**. Eligibility does not activate the role; the target user must activate it when required.
+Mark-2 separates **request/ticket data** from **administrator-managed PIM security policy settings**. The goal is to validate the Azure CLI workflow locally before integrating it into GitHub Actions.
 
-## Scope configuration in input.json
+## Included files
 
-The `pim.scope` object supports:
+```text
+input.json
+modules/pim/
+├── README.md
+├── CLI_LOCAL_TESTING.md
+├── pim.bicep
+└── policies/
+    └── pim-policy-settings.json
+```
 
-- **Subscription**: `{"type":"Subscription"}`
-- **Resource Group**: `{"type":"ResourceGroup","resourceGroupName":"rg-example"}`
-- **Individual resource**: `{"type":"Resource","resourceId":"/subscriptions/<sub>/resourceGroups/<rg>/providers/<provider>/<type>/<name>"}`
+- Root `input.json`: request-specific data (ticket, requester, principal, role, scope, assignment duration). It is a sanitized example/template.
+- `policies/pim-policy-settings.json`: desired security policy settings for Azure Resource roles, Entra directory roles, and PIM for Groups.
+- `pim.bicep`: subscription-scope Azure Resource PIM eligibility module retained from Mark-1.
+- `CLI_LOCAL_TESTING.md`: local Azure CLI testing instructions, read checks, ARM REST request, Graph discovery commands, and Mermaid workflow.
 
-For ResourceGroup, the workflow derives `/subscriptions/<subscriptionId>/resourceGroups/<resourceGroupName>`. For Resource, the full Azure resource ID is used as scope. The resource must be within the configured subscription.
+The PIM Mark-2 branch deliberately does **not** include a GitHub Actions workflow yet. First validate the request path locally with Azure CLI; pipeline integration comes after local testing.
 
-## Input JSON reference
+## Architecture and separation of responsibilities
 
-| Key | Meaning |
-|---|---|
-| `request.ticketId` | Request reference |
-| `request.requestedBy` | Requester metadata |
-| `request.approved` | Approval flag; must be true |
-| `request.environment` | Environment label |
-| `request.project` | Project name |
-| `request.deploymentMethod` | Deployment method |
-| `subscription.name` | Subscription label, validated as BIFROST-SC |
-| `subscription.subscriptionId` | Placeholder only; GitHub environment variable is authoritative |
-| `pim.enabled` | Enable PIM operation |
-| `pim.assignmentType` | Workflow currently supports Eligibility |
-| `pim.requestType` | Request action, default AdminAssign |
-| `pim.user.alias` | Target-user alias |
-| `pim.user.principalId` | Entra object ID |
-| `pim.user.principalType` | User (current workflow expectation) |
-| `pim.role.roleName` | Role display name |
-| `pim.role.roleDefinitionId` | Built-in role GUID or full role definition resource ID |
-| `pim.scope.type` | Subscription, ResourceGroup, or Resource |
-| `pim.scope.resourceGroupName` | Required for ResourceGroup scope |
-| `pim.scope.resourceId` | Required for Resource scope |
-| `pim.schedule.duration` | ISO 8601 duration such as P90D |
-| `pim.schedule.expirationType` | AfterDuration, AfterDateTime, NoExpiration |
-| `pim.schedule.startDateTime` | Optional UTC start; blank means current time |
-| `pim.justification` | Business justification |
-| `pim.ticketInfo.ticketSystem` | Ticket system name |
-| `pim.ticketInfo.ticketNumber` | Ticket reference sent to Azure |
+### Request vs policy
 
-## Request types
+| Source | Owner | Contains | Must not contain |
+|---|---|---|---|
+| `input.json` | Ticket/request process | ticket reference, approval, requester, target principal, role, scope, assignment period, justification | policy overrides such as disabling MFA or bypassing approval |
+| `policies/pim-policy-settings.json` | PIM/security administrators | MFA, Conditional Access intent, approval, approvers, activation time, notifications, eligible/active defaults | per-ticket requester-controlled values |
 
-The ARM role eligibility schedule request API recognizes:
+A ticket can request a role and a time window; it cannot change the tenant's activation controls.
 
-| Type | Operation | Caveat |
-|---|---|---|
-| `AdminAssign` | Create eligibility | Supported default/create path |
-| `AdminUpdate` | Update eligibility | Existing schedule context required |
-| `AdminRemove` | Remove eligibility | Target schedule context required |
-| `AdminExtend` | Admin extend eligibility | Existing schedule context required |
-| `AdminRenew` | Admin renew eligibility | Existing/expired schedule context required |
-| `SelfActivate` | User activation | User-context action |
-| `SelfDeactivate` | User deactivation | User-context action |
-| `SelfExtend` | User extension request | User-context action |
-| `SelfRenew` | User renewal request | User-context action |
+## PIM platforms
 
-The Bicep module exposes the `requestType` parameter. The current workflow feeder validates the API action values, but its primary grant flow is `AdminAssign`; the other request types require target schedule IDs and/or a user-context flow. They are **not** drop-in alternatives for creating new eligibility.
+| Platform | API/service | Examples | Mark-2 scope |
+|---|---|---|---|
+| Azure Resource PIM | Azure Resource Manager Authorization API | Owner, Contributor, User Access Administrator; subscription/RG/resource | CLI-first eligibility test documented |
+| Microsoft Entra directory-role PIM | Microsoft Graph `roleManagement/directory` | Global Administrator, Exchange Administrator | Policy intent/configuration captured; Graph writes require a separately validated implementation |
+| PIM for Groups | Microsoft Graph `identityGovernance/privilegedAccess/group` | Group member/owner eligibility | Policy intent/configuration captured; Graph writes require a separately validated implementation |
 
-## GitHub Actions workflow inputs
+**Important:** These are different API surfaces. Azure Resource PIM ARM requests cannot be reused as Graph directory-role or group PIM requests.
 
-- `run_what_if`: ARM What-If preview (does not guarantee PIM service-side validation).
-- `deploy_pim`: explicit deployment gate.
-- `view_access`: generate user and access report.
+## Module flow
 
-## GitHub Environment: bifrost-dev
+```mermaid
+flowchart LR
+  T[Approved ticket] --> R[input.json request]
+  A[PIM/security administrator] --> P[pim-policy-settings.json]
+  R --> V[Validate requester, role, scope, duration]
+  P --> V
+  V --> API{PIM platform}
+  API --> AZ[Azure Resource PIM - ARM Authorization API]
+  API --> EN[Entra directory role PIM - Microsoft Graph]
+  API --> GR[PIM for Groups - Microsoft Graph]
+  AZ --> C[Verify schedule/eligibility]
+  EN --> C
+  GR --> C
+  C --> AUD[Record audit outcome in ticket]
+```
 
-Set environment variables under **Settings → Environments → bifrost-dev → Environment variables**:
+## Azure Resource PIM eligibility flow
 
-| Variable | Used for |
-|---|---|
-| `AZURE_CLIENT_ID` | OIDC client/application ID for azure/login |
-| `AZURE_TENANT_ID` | Tenant ID |
-| `AZURE_SUBSCRIPTION_ID` | Target subscription ID |
+```mermaid
+sequenceDiagram
+  actor Requester
+  participant Ticket as Jira/Service ticket
+  participant Input as input.json
+  participant CLI as Azure CLI
+  participant ARM as Azure Authorization PIM API
 
-Workflow uses `azure/login@v2` and GitHub OIDC (`id-token: write`); no client secret is expected. Configure a matching Entra federated credential. OIDC principal needs appropriate Azure RBAC/PIM permissions and any Microsoft Graph permissions used by reporting.
+  Requester->>Ticket: Request role, scope, time period
+  Ticket->>Ticket: Approval and justification
+  Ticket->>Input: Populate request fields
+  Input->>CLI: Local CLI testing
+  CLI->>CLI: Login, verify subscription/user/role/scope
+  CLI->>ARM: PUT roleEligibilityScheduleRequests
+  ARM-->>CLI: Request result
+  CLI->>ARM: GET eligibility schedule instances
+  ARM-->>CLI: Verify eligibility
+  CLI-->>Ticket: Record result/reference
+```
 
-## Notes
+## Role and activation policy examples
 
-- Workflow runs on `ubuntu-latest`; feeder validation uses Python and jq.
-- ARM deployment location `centralindia` is deployment metadata, not the access scope.
-- PIM onboarding/licensing and permissions are prerequisites; What-If cannot bypass them.
-- Do not use Self* operations with the GitHub service principal as if it were the target user.
+The screenshots provided example policy intent:
+
+- **Azure Resource Owner (critical subscription):** MFA, notifications, Conditional Access, approval from another subscription owner, one-hour activation.
+- **Azure User Access Administrator (less critical subscription):** MFA, notifications, Conditional Access, no approval, one-hour activation.
+- **Microsoft Entra Global Administrator:** MFA, Conditional Access, notifications, incident/ticket, approval by another Global Administrator, one-hour activation.
+- **Exchange Administrator:** MFA, Conditional Access, notifications, two-hour activation, no approval in the example.
+- **PIM for Groups Owner:** MFA, notifications, Conditional Access, approval by another group owner, one-hour activation.
+- **PIM for Groups Member:** MFA, notifications, Conditional Access, no approval, five-hour activation.
+
+These are examples from the supplied deployment-plan screenshots, **not a recommended universal production baseline**. Review each role against your tenant's risk and policy requirements. Settings in the JSON are policy intent; they are not automatically applied by this branch.
+
+## Azure CLI local test
+
+Follow [CLI_LOCAL_TESTING.md](./CLI_LOCAL_TESTING.md) from top to bottom:
+
+1. Login and select a sandbox subscription.
+2. Verify the target user and role definition.
+3. Set subscription, RG, or resource scope.
+4. Submit an Azure Resource PIM eligibility request with `az rest`.
+5. Verify the eligibility schedule.
+6. Explore Entra/group PIM read endpoints separately using Graph.
+
+Do not integrate the GitHub workflow until the CLI path succeeds in a test subscription/tenant.
+
+## Security rules
+
+- Use least privilege and prefer eligible over permanent active access.
+- Ticket/request inputs cannot weaken policy.
+- Keep permanent active Owner/Global Administrator assignments limited to approved emergency access accounts.
+- Do not commit secrets, access tokens, real user IDs, or production ticket data.
+- Require explicit approval before actual PIM writes.
+- A successful eligibility request does not activate the role immediately; the user must activate it subject to policy.
+
+## Current Mark-2 limitations
+
+- The retained `pim.bicep` is subscription-targeted and only creates Azure Resource PIM eligibility schedule requests.
+- Resource Group and individual resource PIM local testing uses the Authorization REST API at the selected scope.
+- Entra directory-role policy/assignment and PIM for Groups policy/assignment are documented as separate Graph integrations; they are **not yet automated** by this branch.
+- GitHub Actions/OIDC integration is intentionally deferred until Azure CLI validation is complete.
