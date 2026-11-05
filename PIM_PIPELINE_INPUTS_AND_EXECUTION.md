@@ -177,3 +177,200 @@ with `requestType: 'AdminAssign'` and an expiration of `AfterDuration`.
 - A successful deployment creates **eligibility**, not immediate active Contributor access.
 - The eligible user must activate the role through PIM, subject to tenant activation policy.
 - This workflow is manually triggered only; it does not deploy on push.
+
+
+## 10. Local testing with Azure CLI (without GitHub Actions)
+
+These commands test the PIM module from your workstation using your interactive Azure CLI identity (not GitHub Actions OIDC).
+
+> **Safety:** Start with What-If. Actual deployment/REST commands create a PIM request. Run them only after checking user, role, scope, and duration. Eligibility is not active access.
+
+### Prerequisites
+- Azure CLI installed; Bicep available through Azure CLI.
+- Your signed-in identity has permissions to create PIM eligibility requests at the target scope.
+- PIM is onboarded and required licensing is enabled.
+- Replace placeholders with real values. Subscription placeholder: \`<AZURE_SUBSCRIPTION_ID>\`.
+
+### Login and select subscription
+
+**PowerShell**
+\`\`\`powershell
+az login
+az account set --subscription "<AZURE_SUBSCRIPTION_ID>"
+az account show --query "{name:name,id:id,tenantId:tenantId,user:user.name}" -o table
+$env:AZURE_SUBSCRIPTION_ID = "<AZURE_SUBSCRIPTION_ID>"
+$SUBSCRIPTION_ID = $env:AZURE_SUBSCRIPTION_ID
+\`\`\`
+
+**Bash**
+\`\`\`bash
+az login
+az account set --subscription "<AZURE_SUBSCRIPTION_ID>"
+az account show --query "{name:name,id:id,tenantId:tenantId,user:user.name}" -o table
+export AZURE_SUBSCRIPTION_ID="<AZURE_SUBSCRIPTION_ID>"
+SUBSCRIPTION_ID="$AZURE_SUBSCRIPTION_ID"
+\`\`\`
+
+### Set request values
+
+**PowerShell**
+\`\`\`powershell
+$PRINCIPAL_ID = "<ENTRA_USER_OBJECT_ID>"
+$ROLE_GUID = "b24988ac-6180-42a0-ab88-20f7382dd24c" # Contributor built-in role
+$JUSTIFICATION = "BIFROST PIM local module test"
+$DURATION = "P30D"
+$REQUEST_NAME = [guid]::NewGuid().ToString()
+$TICKET_NUMBER = "BIFROST-LOCAL-TEST"
+$TICKET_SYSTEM = "ManualTest"
+$ROLE_DEFINITION_ID = "/subscriptions/$SUBSCRIPTION_ID/providers/Microsoft.Authorization/roleDefinitions/$ROLE_GUID"
+\`\`\`
+
+**Bash**
+\`\`\`bash
+PRINCIPAL_ID="<ENTRA_USER_OBJECT_ID>"
+ROLE_GUID="b24988ac-6180-42a0-ab88-20f7382dd24c" # Contributor built-in role
+JUSTIFICATION="BIFROST PIM local module test"
+DURATION="P30D"
+REQUEST_NAME="$(uuidgen)"
+TICKET_NUMBER="BIFROST-LOCAL-TEST"
+TICKET_SYSTEM="ManualTest"
+ROLE_DEFINITION_ID="/subscriptions/$SUBSCRIPTION_ID/providers/Microsoft.Authorization/roleDefinitions/$ROLE_GUID"
+\`\`\`
+
+Replace \`<ENTRA_USER_OBJECT_ID>\` with the target user's Microsoft Entra Object ID GUID, not email/UPN. Verify:
+\`\`\`bash
+az ad user show --id "$PRINCIPAL_ID" --query "{displayName:displayName,id:id,userPrincipalName:userPrincipalName}" -o table
+az role definition list --name "$ROLE_GUID" --query "[0].{roleName:roleName,id:name}" -o table
+\`\`\`
+
+### Build the Bicep module
+
+Run from the repository root:
+\`\`\`bash
+az bicep install
+az bicep build --file modules/pim/pim.bicep
+\`\`\`
+
+Create a local ARM parameter file (do not commit real identity/ticket details):
+\`\`\`bash
+cat > pim.local.parameters.json <<'JSON'
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "principalId": { "value": "<ENTRA_USER_OBJECT_ID>" },
+    "roleDefinitionId": { "value": "/subscriptions/<AZURE_SUBSCRIPTION_ID>/providers/Microsoft.Authorization/roleDefinitions/b24988ac-6180-42a0-ab88-20f7382dd24c" },
+    "requestType": { "value": "AdminAssign" },
+    "justification": { "value": "BIFROST PIM local module test" },
+    "duration": { "value": "P30D" },
+    "requestName": { "value": "<UNIQUE_REQUEST_GUID>" },
+    "ticketNumber": { "value": "BIFROST-LOCAL-TEST" },
+    "ticketSystem": { "value": "ManualTest" }
+  }
+}
+JSON
+\`\`\`
+
+Replace placeholders; \`requestName\` must be a unique GUID.
+
+### What-If preview (subscription scope)
+
+\`\`\`bash
+az deployment sub what-if \\
+  --name "BIFROST-PIM-LOCAL-WHATIF" \\
+  --location "centralindia" \\
+  --template-file modules/pim/pim.bicep \\
+  --parameters @pim.local.parameters.json
+\`\`\`
+
+What-If does not guarantee PIM licensing, onboarding, authorization, or service-side request processing.
+
+### Create eligibility (subscription scope)
+
+Only after reviewing the preview:
+\`\`\`bash
+az deployment sub create \\
+  --name "BIFROST-PIM-LOCAL-$(date +%Y%m%d%H%M%S)" \\
+  --location "centralindia" \\
+  --template-file modules/pim/pim.bicep \\
+  --parameters @pim.local.parameters.json \\
+  --output json
+\`\`\`
+
+### Resource Group / individual Resource scope via Azure CLI REST
+
+The Bicep module has \`targetScope = 'subscription'\`; the above Bicep commands test subscription scope. For RG/resource scopes, use Azure Authorization API with the complete scope path.
+
+**PowerShell**
+\`\`\`powershell
+$SCOPE_ID = "/subscriptions/<AZURE_SUBSCRIPTION_ID>/resourceGroups/<RESOURCE_GROUP_NAME>"
+# Individual resource scope example:
+# $SCOPE_ID = "/subscriptions/<AZURE_SUBSCRIPTION_ID>/resourceGroups/<RESOURCE_GROUP_NAME>/providers/<PROVIDER>/<TYPE>/<RESOURCE_NAME>"
+
+$BODY = @{
+  properties = @{
+    principalId = "<ENTRA_USER_OBJECT_ID>"
+    roleDefinitionId = "/subscriptions/<AZURE_SUBSCRIPTION_ID>/providers/Microsoft.Authorization/roleDefinitions/<ROLE_DEFINITION_GUID>"
+    requestType = "AdminAssign"
+    justification = "BIFROST PIM local test"
+    ticketInfo = @{ ticketNumber = "BIFROST-LOCAL-TEST"; ticketSystem = "ManualTest" }
+    scheduleInfo = @{
+      startDateTime = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+      expiration = @{ type = "AfterDuration"; duration = "P30D" }
+    }
+  }
+} | ConvertTo-Json -Depth 10
+
+az rest --method put \`
+  --url "https://management.azure.com$SCOPE_ID/providers/Microsoft.Authorization/roleEligibilityScheduleRequests/<UNIQUE_REQUEST_GUID>?api-version=2024-09-01-preview" \`
+  --body $BODY
+\`\`\`
+
+**Bash**
+\`\`\`bash
+SCOPE_ID="/subscriptions/<AZURE_SUBSCRIPTION_ID>/resourceGroups/<RESOURCE_GROUP_NAME>"
+# Resource example:
+# SCOPE_ID="/subscriptions/<AZURE_SUBSCRIPTION_ID>/resourceGroups/<RESOURCE_GROUP_NAME>/providers/<PROVIDER>/<TYPE>/<RESOURCE_NAME>"
+
+cat > pim-request-body.json <<'JSON'
+{
+  "properties": {
+    "principalId": "<ENTRA_USER_OBJECT_ID>",
+    "roleDefinitionId": "/subscriptions/<AZURE_SUBSCRIPTION_ID>/providers/Microsoft.Authorization/roleDefinitions/<ROLE_DEFINITION_GUID>",
+    "requestType": "AdminAssign",
+    "justification": "BIFROST PIM local test",
+    "ticketInfo": { "ticketNumber": "BIFROST-LOCAL-TEST", "ticketSystem": "ManualTest" },
+    "scheduleInfo": {
+      "startDateTime": "2026-11-05T00:00:00Z",
+      "expiration": { "type": "AfterDuration", "duration": "P30D" }
+    }
+  }
+}
+JSON
+
+az rest --method put \\
+  --url "https://management.azure.com\${SCOPE_ID}/providers/Microsoft.Authorization/roleEligibilityScheduleRequests/<UNIQUE_REQUEST_GUID>?api-version=2024-09-01-preview" \\
+  --body @pim-request-body.json
+\`\`\`
+
+Replace all placeholders including UTC timestamp, resource ID, role GUID, and request GUID. The role definition ID is different from the target scope ID.
+
+### Cleanup local files
+\`\`\`bash
+rm -f pim.local.parameters.json pim-request-body.json
+\`\`\`
+
+PowerShell:
+\`\`\`powershell
+Remove-Item pim.local.parameters.json, pim-request-body.json -ErrorAction SilentlyContinue
+\`\`\`
+
+### Troubleshooting
+| Error | Check |
+|---|---|
+| \`AuthorizationFailed\` | Signed-in identity needs PIM schedule request permissions at target scope. |
+| PIM licensing/onboarding error | Verify licensing and PIM onboarding in target tenant. |
+| Principal not found | Use Entra Object ID and correct tenant. |
+| Invalid role | Verify role GUID/full role definition ID. |
+| Invalid scope | Check subscription, RG, and ARM resource ID. |
+| Request name conflict | Generate a new GUID. |
