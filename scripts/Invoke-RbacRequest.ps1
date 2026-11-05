@@ -15,10 +15,12 @@ if ($request.scopeLevel -eq 'Resource') {
   Assert-Value ([string]$request.resourceId) 'resourceId'
   if ($request.resourceId -notmatch '^/subscriptions/[^/]+/resourceGroups/[^/]+/providers/[^/]+/.+') { throw 'resourceId must be a full ARM resource ID.' }
 }
-& az account set --subscription $request.subscriptionId
-if ($LASTEXITCODE -ne 0) { throw 'Could not set Azure subscription.' }
-$account = (& az account show --output json | ConvertFrom-Json)
-if ($account.tenantId -ne $request.tenantId) { throw 'Azure CLI tenant differs from tenantId in input.json.' }
+if (-not $WhatIf) {
+  & az account set --subscription $request.subscriptionId
+  if ($LASTEXITCODE -ne 0) { throw 'Could not set Azure subscription.' }
+  $account = (& az account show --output json | ConvertFrom-Json)
+  if ($account.tenantId -ne $request.tenantId) { throw 'Azure CLI tenant differs from tenantId in input.json.' }
+}
 $scope = switch ($request.scopeLevel) {
   'Subscription' { "/subscriptions/$($request.subscriptionId)" }
   'ResourceGroup' { "/subscriptions/$($request.subscriptionId)/resourceGroups/$($request.resourceGroupName)" }
