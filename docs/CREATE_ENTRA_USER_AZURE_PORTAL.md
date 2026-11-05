@@ -1,53 +1,84 @@
-# Create a Microsoft Entra User in Azure Portal
+# 👤 Create a Microsoft Entra user in Azure Portal
 
-This guide explains how to create a user identity for a BIFROST PIM access request. Creating a user does **not** grant Azure access by itself. Azure PIM eligibility is a separate step.
+This guide helps prepare an identity for a BIFROST PIM access request. Creating a user **does not grant Azure access**; PIM eligibility is a separate operation.
 
-## Before you begin
+## 🧰 Before you begin
 
-- Sign in to the [Azure Portal](https://portal.azure.com/).
-- Ensure you have permission to create users in the Microsoft Entra tenant.
-- Confirm whether the identity should be an internal member or external guest. Follow your organization's identity lifecycle standards.
+- Sign in to [Azure Portal](https://portal.azure.com/).
+- Confirm you have permission to create users in the correct Microsoft Entra tenant.
+- Confirm whether the identity should be an internal member or external guest.
+- Follow your organization's identity creation and approval process.
 
-## Create the user
+## 🪄 Create the user
 
-1. Open **Microsoft Entra ID** in Azure Portal.
-2. Go to **Users** → **New user** → **Create new user**.
-3. Enter the user's **User principal name (UPN)** and display name.
-4. Complete required profile fields and password/sign-in options according to your organization's process.
-5. Select **Review + create** (or **Create**, depending on portal UI).
-6. After creation, open the user's profile.
+1. Open **Microsoft Entra ID**.
+2. Navigate to **Users** → **New user** → **Create new user**.
+3. Enter the user's UPN and display name.
+4. Complete required profile and sign-in fields according to organizational policy.
+5. Select **Review + create** / **Create** as shown in the portal.
+6. Open the newly created user's profile.
 
-## Collect the user's identifiers
+## 🪪 Collect identifiers
 
-On the user's **Overview** page, record:
+From the user's **Overview** page, collect:
 
-| Portal field | Used for |
+| Portal value | BIFROST use |
 |---|---|
-| Display name | Human-readable identity in root input.json |
-| User principal name (UPN) | Login identity and requestor reference |
-| Object ID | principalId / entraObjectId in PIM configuration |
+| Display name | Requestor display label in root `input.json` |
+| User principal name (UPN) | Requestor login/reference |
+| Object ID | `principalId` / `entraObjectId` |
 
-**Important:** Azure PIM requires the Microsoft Entra **Object ID (GUID)** for principalId. Do not substitute display name, email, UPN, or alias.
+> 🔑 **Use the Object ID GUID for PIM principalId.** Do not use display name, email, UPN, or alias instead.
 
-## Update BIFROST request configuration
+## 🔄 Identity preparation flow
 
-- In root input.json, populate the requestor fields under pimAccessRequest.requestor.
-- In modules/pim/pim-request.bicepparam, set principalId to the user's Entra Object ID.
-- Confirm target subscription, role, scope, duration, and justification with the access owner before deployment.
+```mermaid
+flowchart TD
+  A([🧑 Identity administrator]) --> B[☁️ Open Microsoft Entra ID]
+  B --> C[👤 Users → New user]
+  C --> D[📝 Enter user details]
+  D --> E[✅ Create user]
+  E --> F[🔎 Open user Overview]
+  F --> G[🪪 Copy display name, UPN, Object ID]
+  G --> H[🧾 Populate root input.json]
+  H --> I([🛡️ Submit separate PIM eligibility request])
 
-## Verify the user
+  subgraph Portal["🌐 Azure Portal"]
+    B
+    C
+    D
+    E
+    F
+    G
+  end
+  subgraph Bifrost["🌌 BIFROST"]
+    H
+    I
+  end
 
-Azure CLI alternative:
+  classDef portal fill:#E3F2FD,stroke:#1565C0,color:#0D47A1,stroke-width:2px;
+  classDef bifrost fill:#E8F5E9,stroke:#2E7D32,color:#1B5E20,stroke-width:2px;
+  class A,B,C,D,E,F,G portal;
+  class H,I bifrost;
+```
+
+## 🧾 Update BIFROST
+
+- Populate `pimAccessRequest.requestor` in root `input.json`.
+- Use the user's Entra Object ID for the Bicep `principalId`.
+- Confirm subscription, role, scope, request operation, eligibility duration, and justification with the access owner.
+- The policy configuration belongs in `modules/pim/pim-policy-settings.bicepparam`.
+
+## 🔎 Verify with Azure CLI (optional)
 
 ```bash
 az ad user show --id "user@yourdomain.com" --query id --output tsv
 ```
 
-This requires Azure CLI authentication to the correct tenant and sufficient directory read permissions.
+This requires Azure CLI sign-in to the correct tenant and directory read permission.
 
-## Security reminders
+## 🔒 Security reminders
 
-- Follow your organization's approval process for identity creation.
-- Do not share temporary passwords or credentials in GitHub, JSON files, or chat.
-- Do not grant privileged roles directly just to create the account.
-- Use least privilege and verify the tenant before making access changes.
+- Never put temporary passwords or secrets in GitHub, JSON, or chat.
+- Do not grant privileged roles just to create an account.
+- Apply least privilege and verify tenant context.
