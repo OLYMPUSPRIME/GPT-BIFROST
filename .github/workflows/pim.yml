@@ -35,6 +35,9 @@ jobs:
       principal_id: ${{ steps.config.outputs.principal_id }}
       role_definition_id: ${{ steps.config.outputs.role_definition_id }}
       request_name: ${{ steps.config.outputs.request_name }}
+      scope_id: ${{ steps.config.outputs.scope_id }}
+      scope_type: ${{ steps.config.outputs.scope_type }}
+      request_type: ${{ steps.config.outputs.request_type }}
     steps:
       - uses: actions/checkout@v4
 
@@ -89,7 +92,23 @@ jobs:
           require(user["principalType"] == "User", "This workflow only supports User principals.")
           require(bool(re.fullmatch(guid, principal)), "Replace principalId with the user's Entra Object ID (GUID).")
           require(bool(re.fullmatch(guid, role["roleDefinitionId"])), "roleDefinitionId must be a role GUID.")
-          require(pim["scope"]["type"] == "Subscription", "PIM scope must be Subscription.")
+          scope = pim["scope"]
+          scope_type = scope.get("type", "")
+          require(scope_type in ("Subscription", "ResourceGroup", "Resource"), "scope.type must be Subscription, ResourceGroup, or Resource.")
+          if scope_type == "Subscription":
+              scope_id = f"/subscriptions/{sub}"
+          elif scope_type == "ResourceGroup":
+              rg_name = scope.get("resourceGroupName", "")
+              require(bool(rg_name), "scope.resourceGroupName is required for ResourceGroup.")
+              scope_id = f"/subscriptions/{sub}/resourceGroups/{rg_name}"
+          else:
+              scope_id = scope.get("resourceId", "")
+              require(scope_id.startswith(f"/subscriptions/{sub}/resourceGroups/") and "/providers/" in scope_id, "scope.resourceId must be a full resource ID inside the configured subscription.")
+
+          request_type = pim.get("requestType", "AdminAssign")
+          allowed_types = {"AdminAssign", "AdminUpdate", "AdminRemove", "AdminExtend", "AdminRenew", "SelfActivate", "SelfDeactivate", "SelfExtend", "SelfRenew"}
+          require(request_type in allowed_types, "Unsupported PIM requestType.")
+          require(request_type == "AdminAssign", "Workflow currently executes AdminAssign. Other request types need existing schedule IDs and/or user-context flow.")
           require(pim["schedule"]["expirationType"] == "AfterDuration", "Only AfterDuration is supported.")
           require(pim["schedule"]["duration"].startswith("P"), "Use an ISO 8601 duration such as P90D.")
 
@@ -193,14 +212,45 @@ jobs:
                 ticketSystem:{value:.pim.ticketInfo.ticketSystem}
               }}' input.json > pim.parameters.json
 
-      - name: Create PIM eligibility request
+      - name: Submit PIM eligibility request at selected scope
+        env:
+          SCOPE_ID: ${{ needs.validate.outputs.scope_id }}
+          SUBSCRIPTION_ID: ${{ needs.validate.outputs.subscription_id }}
+          PRINCIPAL_ID: ${{ needs.validate.outputs.principal_id }}
+          REQUEST_NAME: ${{ needs.validate.outputs.request_name }}
         run: |
-          az deployment sub create \
-            --name "BIFROST-PIM-${{ github.run_number }}" \
-            --location "centralindia" \
-            --template-file modules/pim/pim.bicep \
-            --parameters @pim.parameters.json \
-            --output table
+          set -euo pipefail
+          python - <<'PY'
+          import json, os, subprocess
+          with open("input.json", encoding="utf-8") as f:
+              config = json.load(f)
+          pim = config["pim"]
+          role = pim["role"]["roleDefinitionId"]
+          if role.startswith("/"):
+              role_id = role
+          else:
+              role_id = f'/subscriptions/{os.environ["SUBSCRIPTION_ID"]}/providers/Microsoft.Authorization/roleDefinitions/{role}'
+          schedule = pim["schedule"]
+          expiration_type = schedule.get("expirationType", "AfterDuration")
+          expiration = {"type": expiration_type}
+          if expiration_type == "AfterDuration":
+              expiration["duration"] = schedule.get("duration", "P90D")
+          elif expiration_type == "AfterDateTime":
+              expiration["endDateTime"] = schedule["endDateTime"]
+          body = {"properties": {
+              "principalId": pim["user"]["principalId"],
+              "roleDefinitionId": role_id,
+              "requestType": pim.get("requestType", "AdminAssign"),
+              "justification": pim["justification"],
+              "ticketInfo": pim["ticketInfo"],
+              "scheduleInfo": {
+                  "startDateTime": schedule.get("startDateTime") or None,
+                  "expiration": expiration
+              }
+          }}
+          url = f'https://management.azure.com{os.environ["SCOPE_ID"]}/providers/Microsoft.Authorization/roleEligibilityScheduleRequests/{os.environ["REQUEST_NAME"]}?api-version=2024-09-01-preview'
+          subprocess.run(["az", "rest", "--method", "put", "--url", url, "--body", json.dumps(body), "--output", "json"], check=True)
+          PY
 
       - name: Clean generated parameter file
         if: always()
