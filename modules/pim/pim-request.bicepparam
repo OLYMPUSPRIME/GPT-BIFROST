@@ -2,9 +2,7 @@ using './pim.bicep'
 
 param principalId = '<REQUESTOR_ENTRA_OBJECT_ID>'
 param roleDefinitionId = '/subscriptions/<SUBSCRIPTION_ID>/providers/Microsoft.Authorization/roleDefinitions/b24988ac-6180-42a0-ab88-20f7382dd24c'
-param requestType = 'AdminAssign'
 param justification = 'Temporary privileged access - request <REQUEST_REFERENCE>'
-param duration = 'P30D'
 param startDateTime = utcNow('yyyy-MM-ddTHH:mm:ssZ')
 param requestName = newGuid()
 param ticketNumber = '<REQUEST_REFERENCE>'
