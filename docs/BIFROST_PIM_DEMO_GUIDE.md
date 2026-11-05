@@ -425,7 +425,7 @@ The runner will validate the policy, select the subscription from the JSON, run 
 
 ### Sequence diagram
 
-~~~mermaid
+```mermaid
 sequenceDiagram
   autonumber
   actor Presenter as 🧑‍💻 Presenter
@@ -454,7 +454,7 @@ sequenceDiagram
     ARM->>PIM: Create eligibility request
     PIM-->>Presenter: Result
   end
-~~~
+```
 
 ## 11. Verify in Azure Portal
 
