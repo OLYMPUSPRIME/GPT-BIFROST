@@ -1,218 +1,105 @@
-# GPT-BIFROST | PIM User Eligibility
+# BIFROST — Azure Privileged Identity Management (PIM)
 
-**Branch:** `feature/PIM_mark_1`  
-**Purpose:** This branch is dedicated only to granting Microsoft Entra users **Azure PIM eligible role access**. It does not deploy VMs, networks, resource groups, monitoring, backup, storage, or direct RBAC assignments.
+BIFROST is a reusable configuration and implementation workspace for Azure PIM access. This branch, `feature/PIM_mark_2`, currently contains the request-input example, an Azure Resource PIM eligibility Bicep template, and PIM policy configuration intent.
 
-## What this workflow does
+> **Implementation status:** The current Bicep template creates an Azure Resource PIM eligibility schedule request. The policy objects in the .bicepparam file document desired policy settings; they are not automatically applied. Entra directory-role PIM and PIM for Groups policy updates require separate Microsoft Graph implementation. No end-to-end runner that reads root input.json and maps every field into deployment parameters is currently present.
 
-- Reads the PIM request from root `input.json`.
-- Uses GitHub Actions OIDC to authenticate to Azure.
-- Builds and validates the PIM Bicep module.
-- Validates input and can submit a PIM eligibility request at Subscription, Resource Group, or Resource scope.
-- Creates a PIM eligibility schedule request only when `deploy_pim` is explicitly enabled.
-- Assigns eligibility to the configured user (sample alias: `pim_user_1`) for the selected role and duration.
-
-> **Important:** PIM eligibility is not immediate active access. The eligible user must activate the role through Microsoft Entra PIM and satisfy any configured MFA, approval, justification, or other activation requirements.
-
-## Repository layout
+## Repository structure
 
 ```text
-GPT-BIFROST/
-├── .github/
-│   └── workflows/
-│       └── pim.yml
-├── modules/
-│   └── pim/
-│       └── pim.bicep
+BIFROST/
 ├── input.json
-└── README.md
+├── README.md
+├── docs/
+│   ├── README.md
+│   ├── CLI_LOCAL_TESTING.md
+│   ├── CREATE_ENTRA_USER_AZURE_PORTAL.md
+│   ├── PIM_AZURE_PORTAL_VARIABLES.md
+│   └── hardcoded_values_audit.md
+└── modules/
+    └── pim/
+        ├── pim.bicep
+        ├── pim-policy-settings.bicepparam
+        └── README.md
 ```
 
-## Input configuration
+## Configuration responsibilities
 
-The root `input.json` is the single source of request configuration.
+### Root `input.json` — request-specific information
 
-### Required user identity
+This file represents a request submitted by a user/requester. It currently includes:
 
-```json
-"user": {
-  "alias": "pim_user_1",
-  "principalId": "REPLACE_WITH_PIM_USER_1_ENTRA_OBJECT_ID",
-  "principalType": "User"
-}
-```
+- **Requestor identity:** display name, UPN, Entra Object ID.
+- **Requested access:** platform, role name, role definition GUID, target scope, assignment type, request operation, eligibility duration, business justification.
+- **Scope:** subscription ID, and optional Resource Group name or resource ID depending on the selected scope.
+- **Request metadata:** requester UPN, environment, ticket ID, ticket number, and ticket system.
 
-`alias` is a human-readable label used in this repository. Azure PIM requires the user's **Microsoft Entra Object ID (GUID)**, not a display name or email address. Replace the placeholder with the actual object ID before running the workflow.
+Use the real Entra **Object ID (GUID)** for the principal, not the display name or UPN. The ticket fields are request metadata and are not currently parameters in `pim.bicep`.
 
-Find the Object ID in Azure Portal:
+### `modules/pim/pim-policy-settings.bicepparam` — PIM policy configuration intent
 
-1. Open **Microsoft Entra ID → Users**.
-2. Search for the intended user.
-3. Open the user profile.
-4. Copy **Object ID**.
-5. Update `pim.user.principalId` in `input.json`.
+This file holds the policy settings represented in the previously supplied policy screenshots, including:
 
-Or use Azure CLI:
+- Azure Resource PIM settings for Owner and User Access Administrator.
+- Entra directory-role PIM settings for Global Administrator and Exchange Administrator.
+- PIM for Groups settings for Owner and Member.
+- Assignment defaults such as eligible assignment preference, maximum eligibility duration, justification/ticket requirements, and permanent assignment restrictions.
 
-```bash
-az ad user show --id "user@yourdomain.com" --query id --output tsv
-```
+Approver Object ID placeholders must be replaced with valid approver IDs where required. Do not confuse these policy settings with the individual request in `input.json`.
 
-The alias `pim_user_1` does not automatically create a user in Entra ID and is not a valid principal ID by itself.
+### `modules/pim/pim.bicep` — Azure Resource PIM eligibility request
 
-## PIM parameters
-
-| JSON property | Description |
-|---|---|
-| `request.approved` | Must be `true`; represents request approval in this sample. |
-| `subscription.name` | Subscription guardrail; currently `BIFROST-SC`. |\n| `subscription.subscriptionId` | Target subscription GUID. This is read from `input.json`, not GitHub vars. |
-| `pim.enabled` | Enables PIM configuration. |
-| `pim.assignmentType` | Currently supports `Eligibility`. |
-| `pim.user.principalId` | Entra Object ID of the user. |
-| `pim.role.roleName` | Human-readable role name. |
-| `pim.role.roleDefinitionId` | Azure role definition GUID. |
-| `pim.scope.type` | `Subscription`, `ResourceGroup`, or `Resource`. |
-| `pim.schedule.duration` | ISO 8601 duration; sample `P90D` (90 days). |
-| `pim.justification` | Business reason for the access request. |
-| `pim.ticketInfo.ticketNumber` | Request/ticket reference. |
-
-### Default role
-
-The sample uses **Contributor**:
-
-```text
-b24988ac-6180-42a0-ab88-20f7382dd24c
-```
-
-Contributor can manage Azure resources but does not grant permission to assign Azure roles. Review the role carefully and use least privilege.
-
-## GitHub Environment configuration
-
-Configure the GitHub repository environment named **`bifrost-env`**:
-
-| Environment variable | Required | Purpose |
-|---|---|---|
-| `AZURE_CLIENT_ID` | Yes | Entra application / workload identity client ID used by Azure Login. |
-| `AZURE_TENANT_ID` | Yes | Entra tenant ID. |
-| `AZURE_SUBSCRIPTION_ID` | Yes | Target subscription ID for BIFROST-SC. |
-
-`AZURE_CLIENT_ID` and `AZURE_TENANT_ID` are read from the GitHub Environment. The target subscription ID comes from `input.json:subscription.subscriptionId`; `AZURE_SUBSCRIPTION_ID` is not used to override it. Configure the federated credential to trust the repository and GitHub environment. Do not store client secrets when OIDC is available.
-
-## Azure permissions
-
-The GitHub OIDC identity needs sufficient permissions to submit subscription-level PIM eligibility schedule requests. Ordinary Contributor access is not sufficient.
-
-Depending on your tenant's authorization model, use an appropriately authorized administrator/role such as Privileged Role Administrator or a delegated role with the required Microsoft.Authorization PIM schedule request permissions. Follow least privilege and organizational approval requirements.
-
-The user creating eligibility should be authorized to assign the requested role at the target scope. The assigned role and scope must comply with tenant PIM policies.
-
-## Run the workflow
-
-1. Push the changes to `feature/PIM_mark_1`.
-2. Open GitHub **Actions**.
-3. Select **BIFROST | PIM User Eligibility Assignment**.
-4. Select **Run workflow** and choose `feature/PIM_mark_1`.
-5. Keep `deploy_pim` unchecked for validation and What-If only.
-6. Review validation and What-If output.
-7. After verifying the target user, role, scope, duration, and approval, run again with `deploy_pim` checked.
-8. Review the Azure deployment result.
-
-### Workflow safety
-
-- `deploy_pim=false`: validation + What-If preview; no eligibility assignment is created.
-- `deploy_pim=true`: submits the eligibility request to Azure.
-- The workflow fails if the principal ID placeholder is not replaced with a valid GUID.
-- The generated parameter file is temporary and removed at the end of the job.
-- The PIM request is submitted using Azure Resource Manager REST at the selected scope. The Bicep module remains subscription-targeted and is compiled for syntax validation; it is not used to create the RG/resource scope request. There is no PIM What-If preview for this REST operation.
-
-## Workflow flow
-
-```mermaid
-flowchart TD
-    A[input.json: pim_user_1] --> B[Validate request and principal Object ID]
-    B --> C[Build pim.bicep]
-    C --> D[GitHub Actions OIDC login]
-    D --> E[Generate temporary parameters]
-    E --> F{deploy_pim enabled?}
-    F -->|No| G[Subscription What-If]
-    F -->|Yes| H[Create PIM eligibility schedule request]
-    H --> I[Eligible user activates role in Entra PIM]
-    G --> J[Remove temporary parameters]
-    I --> J
-```
-
-## Troubleshooting
-
-### Invalid principal / PrincipalNotFound
-- Ensure `pim.user.principalId` is the actual Entra user Object ID.
-- Verify the user exists in the tenant associated with `AZURE_TENANT_ID`.
-
-### AuthorizationFailed / insufficient privileges
-- Confirm the GitHub OIDC identity has PIM schedule request permissions at subscription scope.
-- Confirm the role assignment and PIM policies allow the requested Contributor eligibility.
-- Check subscription ID and tenant ID environment variables.
-
-### Federated credential / Azure login failure
-- Verify `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, and `AZURE_SUBSCRIPTION_ID` in `bifrost-env`.
-- Verify federated credential subject matches this repository and GitHub environment.
-- Confirm workflow permissions include `id-token: write`.
-
-### What-If reports errors
-- Validate the principal ID and role definition GUID.
-- Confirm the Bicep module builds successfully.
-- Confirm the caller has permission to read/submit PIM schedule requests.
-
-## Security notes
-
-- Never put client secrets, passwords, or private keys in `input.json`.
-- Confirm request approval and access justification before deployment.
-- Avoid assigning broad roles at subscription scope unless explicitly approved.
-- Review eligible access periodically and remove eligibility when no longer needed.
-- A PIM eligibility request is privileged: use protected GitHub environment approvals and audit Azure activity logs.
-
-## Related links
-
-- [Azure Privileged Identity Management](https://learn.microsoft.com/azure/active-directory/privileged-identity-management/)
-- [Azure role eligibility schedule requests](https://learn.microsoft.com/azure/templates/microsoft.authorization/roleeligibilityschedulerequests)
-
-
-## Scope-aware PIM access
-
-The root `input.json` defines both the target subscription and scope:
-
-- **Subscription:** `pim.scope.type = "Subscription"`
-- **Resource Group:** `pim.scope.type = "ResourceGroup"` plus `pim.scope.resourceGroupName`
-- **Resource:** `pim.scope.type = "Resource"` plus the full `pim.scope.resourceId`
-
-Set `subscription.subscriptionId` to a real subscription GUID in the JSON. JSON does not expand shell variables such as `${AZURE_SUBSCRIPTION_ID}`. The workflow passes this ID to Azure Login and verifies it with `az account show` after setting the CLI context.
-
-The GitHub Environment `bifrost-dev` is used for OIDC identity variables:
-- `AZURE_CLIENT_ID`
-- `AZURE_TENANT_ID`
-
-The scope preflight checks ARM read access to the configured target. PIM write authorization is checked by Azure when the REST request is submitted. For detailed examples and CLI testing, see [PIM_PIPELINE_INPUTS_AND_EXECUTION.md](PIM_PIPELINE_INPUTS_AND_EXECUTION.md).
-
-## Subscription selection: important clarification
-
-In `modules/pim/pim.bicep`, the declaration:
+The Bicep template is subscription-targeted:
 
 ```bicep
 targetScope = 'subscription'
 ```
 
-sets the **deployment scope** to subscription level. It does **not** identify or select a particular subscription, and it does not read a subscription ID from `input.json` by itself.
+It declares required parameters for principal ID, role definition resource ID, request operation, justification, eligibility duration, and request name. It creates:
 
-The subscription used by a subscription-scope Bicep deployment is selected by the deployment command:
+`Microsoft.Authorization/roleEligibilityScheduleRequests@2024-09-01-preview`
 
-- If the command includes `--subscription <SUBSCRIPTION_ID>`, that ID is the target subscription.
-- If `--subscription` is omitted, Azure CLI uses its currently selected subscription (`az account show --query id -o tsv`).
+The template does **not**:
+- Parse root `input.json` on its own.
+- Select the subscription based on JSON without an orchestration layer.
+- Apply activation-policy settings from the policy objects.
+- Configure Entra directory-role PIM or PIM for Groups policies.
+- Create an active assignment or activate the eligible user's role.
 
-The root `input.json` includes a `subscriptionId` field, but **the current `modules/pim/pim.bicep` does not directly consume that field**. A runner/workflow must read the JSON and explicitly pass the subscription ID to Azure CLI (for example, as `--subscription`) before deployment. Do not assume the JSON value controls the deployment unless that wiring is present and verified.
+## Important parameter distinctions
 
-Check the active CLI context with:
+- **Request operation** (`requestType`, e.g. `AdminAssign`) controls the Azure Resource PIM schedule request operation.
+- **Eligibility duration** (`duration`, e.g. `P30D`) controls how long eligibility is scheduled.
+- **Activation duration** (e.g. 1 hour for a particular policy) is a PIM policy setting, not the same as eligibility duration.
+- The Bicep duration parameter uses a finite `@allowed` list of common ISO 8601 values. It does not accept every possible ISO 8601 expression.
+
+## Subscription targeting
+
+`targetScope = 'subscription'` declares deployment scope; it does not identify the subscription.
+
+The deployment command or workflow must explicitly select the intended subscription (for example, with Azure CLI `--subscription <SUBSCRIPTION_ID>` or `az account set --subscription <SUBSCRIPTION_ID>`). Root `input.json` contains a subscription ID, but Bicep does not read JSON automatically. Until a runner maps that value into the CLI/deployment context, the JSON field alone does not control the subscription.
+
+Verify the active CLI subscription:
 
 ```bash
 az account show --query "{Name:name, SubscriptionId:id, TenantId:tenantId}" -o table
 ```
 
-Before deploying, verify that the selected subscription matches the intended subscription in `input.json`.
+## Testing
+
+See [docs/CLI_LOCAL_TESTING.md](docs/CLI_LOCAL_TESTING.md) for local Azure CLI testing instructions. Test in a non-production subscription and verify identity, scope, role, request type, duration, and policy approvals before deployment.
+
+## Documentation
+
+- [Documentation index](docs/README.md)
+- [Create an Entra user](docs/CREATE_ENTRA_USER_AZURE_PORTAL.md)
+- [Azure Portal values and variable guide](docs/PIM_AZURE_PORTAL_VARIABLES.md)
+- [Local CLI testing](docs/CLI_LOCAL_TESTING.md)
+- [Hardcoded values audit](docs/hardcoded_values_audit.md)
+
+## Security
+
+- Use least privilege and approvals for privileged access.
+- Do not commit passwords, secrets, private keys, or production user identifiers.
+- Protect deployment environments and review the requested role/scope carefully.
+- Successful eligibility creation does not mean the user has activated the role.
