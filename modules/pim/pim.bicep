@@ -8,11 +8,11 @@ param principalId string
 @description('Full Azure role definition resource ID.')
 param roleDefinitionId string
 @allowed(['AdminAssign', 'AdminUpdate', 'AdminRemove', 'AdminExtend', 'AdminRenew'])
-param requestType string = 'AdminAssign'
+param requestType string
 param justification string
 @description('Eligibility duration using one of the supported ISO 8601 duration values listed below.')
 @allowed(['PT1H', 'PT2H', 'PT3H', 'PT4H', 'PT5H', 'PT6H', 'PT8H', 'PT12H', 'PT24H', 'P1D', 'P2D', 'P3D', 'P5D', 'P7D', 'P10D', 'P14D', 'P15D', 'P21D', 'P30D', 'P45D', 'P60D', 'P90D', 'P120D', 'P180D', 'P270D', 'P365D', 'P1W', 'P2W', 'P3W', 'P4W', 'P1M', 'P2M', 'P3M', 'P4M', 'P6M', 'P9M', 'P12M', 'P1Y', 'P2Y'])
-param duration string = 'P30D'
+param duration string
 param startDateTime string = utcNow('yyyy-MM-ddTHH:mm:ssZ')
 param requestName string
 param ticketNumber string
