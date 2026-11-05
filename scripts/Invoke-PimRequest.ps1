@@ -97,8 +97,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Unable to read current Azure account.' }
     if ($account.id -ne $subscriptionId) { throw "Azure CLI subscription mismatch. Expected '$subscriptionId', got '$($account.id)'." }
 
-    Invoke-AzChecked @('deployment','sub','validate','--name',$deploymentName,'--location','eastus','--template-file',$TemplateFile,'--parameters',$tempParamFile) 'Validate subscription deployment'
-    Invoke-AzChecked @('deployment','sub','create','--name',$deploymentName,'--location','eastus','--template-file',$TemplateFile,'--parameters',$tempParamFile,'--output','json') 'Submit PIM eligibility request'
+    Invoke-AzChecked @('deployment','sub','validate','--name',$deploymentName,'--location','eastus','--parameters',$tempParamFile) 'Validate subscription deployment'
+    Invoke-AzChecked @('deployment','sub','create','--name',$deploymentName,'--location','eastus','--parameters',$tempParamFile,'--output','json') 'Submit PIM eligibility request'
     Write-Host 'PIM eligibility request deployment completed. Check deployment outputs/status in Azure.' -ForegroundColor Green
 }
 finally {
